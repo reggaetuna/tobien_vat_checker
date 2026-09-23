@@ -1,0 +1,45 @@
+app_name = "vat_compliance"
+app_title = "VAT Compliance"
+app_publisher = "phamos.eu"
+app_description = "EU-USt-IdNr. Pruefung (VIES) fuer Sales-Belege"
+app_email = "support@phamos.eu"
+app_license = "mit"
+
+# include js in doctype views
+# Sales-only scope for now (2026-09-23 user decision) - Purchase Order/
+# Purchase Invoice/Supplier deliberately not wired up yet, see
+# custom_scripts/custom_python/validation.py module docstring.
+doctype_js = {
+	"Sales Order": "public/js/sales_order.js",
+	"Sales Invoice": "public/js/sales_invoice.js",
+	"Customer": "public/js/customer.js",
+}
+
+# Document Events
+# ---------------
+doc_events = {
+	"Sales Order": {
+		"before_submit": "vat_compliance.custom_scripts.custom_python.validation.enforce_vat_check"
+	},
+	"Sales Invoice": {
+		"before_submit": "vat_compliance.custom_scripts.custom_python.validation.enforce_vat_check"
+	},
+	"VAT Validation Log": {
+		"on_submit": "vat_compliance.custom_scripts.custom_python.validation.attach_pdf_on_submit"
+	},
+}
+
+# Fixtures
+# --------
+# Only export the Custom Fields this app owns (prefix custom_vat*), so
+# `bench --site x export-fixtures` doesn't sweep up unrelated Custom Fields
+# already present on the same doctypes.
+fixtures = [
+	{
+		"dt": "Custom Field",
+		"filters": [
+			["fieldname", "like", "custom_vat%"],
+			["dt", "in", ["Sales Order", "Sales Invoice"]],
+		],
+	},
+]

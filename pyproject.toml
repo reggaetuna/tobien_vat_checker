@@ -1,0 +1,19 @@
+[project]
+name = "vat_compliance"
+authors = [
+    { name = "phamos.eu", email = "support@phamos.eu"}
+]
+description = "EU-USt-IdNr. Pruefung (VIES) fuer Sales/Purchase-Belege in ERPNext v15"
+requires-python = ">=3.10"
+readme = "README.md"
+dynamic = ["version"]
+dependencies = [
+    # "frappe~=15.0.0" # Installed and managed by bench.
+    "requests"
+]
+
+[build-system]
+requires = ["flit_core >=3.4,<4"]
+build-backend = "flit_core.buildapi"
+
+[tool.bench.dev-dependencies]

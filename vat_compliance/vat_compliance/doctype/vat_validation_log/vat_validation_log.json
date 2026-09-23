@@ -1,0 +1,268 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "format:VC-{party}-{YY}-{MM}-{DD}-{#####}",
+ "creation": "2026-09-23 00:00:00.000000",
+ "default_view": "List",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "reference_doctype",
+  "reference_name",
+  "column_break_2",
+  "party_type",
+  "party",
+  "section_break_vat",
+  "country_code",
+  "vat_number",
+  "own_vat_number",
+  "column_break_vat",
+  "valid",
+  "request_date",
+  "request_identifier",
+  "section_break_match",
+  "vies_name",
+  "vies_address",
+  "column_break_match",
+  "name_match",
+  "address_match",
+  "section_break_details",
+  "address",
+  "error_message",
+  "raw_response",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "reference_doctype",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Beleg-Typ",
+   "options": "DocType",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reference_name",
+   "fieldtype": "Dynamic Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Beleg",
+   "options": "reference_doctype",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "party_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Party Type",
+   "options": "Customer\nSupplier",
+   "read_only": 1
+  },
+  {
+   "bold": 1,
+   "fieldname": "party",
+   "fieldtype": "Dynamic Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Kunde/Lieferant",
+   "options": "party_type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_vat",
+   "fieldtype": "Section Break",
+   "label": "Geprüfte USt-IdNr."
+  },
+  {
+   "fieldname": "country_code",
+   "fieldtype": "Data",
+   "label": "Ländercode",
+   "read_only": 1
+  },
+  {
+   "fieldname": "vat_number",
+   "fieldtype": "Data",
+   "label": "USt-IdNr. (ohne Länderpräfix)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "own_vat_number",
+   "fieldtype": "Data",
+   "label": "Eigene USt-IdNr. (Requester)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_vat",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "valid",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Gültig",
+   "read_only": 1
+  },
+  {
+   "fieldname": "request_date",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "VIES Abfragezeitpunkt",
+   "read_only": 1
+  },
+  {
+   "bold": 1,
+   "fieldname": "request_identifier",
+   "fieldtype": "Data",
+   "label": "VIES Consultation Number (Nachweis)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_match",
+   "fieldtype": "Section Break",
+   "label": "Namens-/Adressabgleich"
+  },
+  {
+   "fieldname": "vies_name",
+   "fieldtype": "Data",
+   "label": "Name lt. VIES",
+   "read_only": 1
+  },
+  {
+   "fieldname": "vies_address",
+   "fieldtype": "Small Text",
+   "label": "Adresse lt. VIES",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_match",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Nicht geprueft",
+   "fieldname": "name_match",
+   "fieldtype": "Select",
+   "label": "Namensabgleich",
+   "options": "Nicht geprueft\nUebereinstimmend\nAbweichend",
+   "read_only": 1
+  },
+  {
+   "default": "Nicht geprueft",
+   "fieldname": "address_match",
+   "fieldtype": "Select",
+   "label": "Adressabgleich",
+   "options": "Nicht geprueft\nUebereinstimmend\nAbweichend",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_details",
+   "fieldtype": "Section Break",
+   "label": "Details"
+  },
+  {
+   "fieldname": "address",
+   "fieldtype": "Link",
+   "label": "Geprüfte Adresse",
+   "options": "Address",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:!doc.valid",
+   "fieldname": "error_message",
+   "fieldtype": "Small Text",
+   "label": "Fehlermeldung",
+   "read_only": 1
+  },
+  {
+   "fieldname": "raw_response",
+   "fieldtype": "Code",
+   "label": "VIES Rohantwort",
+   "options": "JSON",
+   "read_only": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "VAT Validation Log",
+   "print_hide": 1,
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-09-23 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "VAT Compliance",
+ "name": "VAT Validation Log",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales Manager",
+   "select": 1,
+   "share": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Purchase Manager",
+   "select": 1,
+   "share": 1
+  },
+  {
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales User",
+   "select": 1
+  },
+  {
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Purchase User",
+   "select": 1
+  }
+ ],
+ "quick_entry": 1,
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
