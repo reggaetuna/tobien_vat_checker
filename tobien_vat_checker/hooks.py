@@ -6,8 +6,8 @@ app_email = "support@phamos.eu"
 app_license = "mit"
 
 # include js in doctype views
-# Sales-only scope for now (2026-09-23 user decision) - Purchase Order/
-# Purchase Invoice/Supplier deliberately not wired up yet, see
+# Sales-only scope for now - Purchase Order/Purchase Invoice/Supplier
+# deliberately not wired up yet, see
 # custom_scripts/custom_python/validation.py module docstring.
 doctype_js = {
 	"Sales Order": "public/js/sales_order.js",

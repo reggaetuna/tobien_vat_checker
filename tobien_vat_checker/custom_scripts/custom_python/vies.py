@@ -1,7 +1,5 @@
 """Thin client for the VIES VAT-number validation REST API.
 
-Endpoint and field names verified against the EU Commission's published
-VIES REST API (successor to the old SOAP `checkVatService`) as of 2026-09.
 See https://ec.europa.eu/taxation_customs/vies/ for the interactive form
 this mirrors.
 """
@@ -12,14 +10,12 @@ import requests
 VIES_REST_URL = "https://ec.europa.eu/taxation_customs/vies/rest-api/check-vat-number"
 
 # Country codes VIES accepts, keyed by the exact Frappe "Country" doctype
-# name used in this instance's Address records. This IS the EU/Territory
-# filter the ticket asks for - confirmed 2026-09-23 via the real site's
-# Address "Customize Form" export that Address has no Territory field at
-# all (only country, tax_category, eori_no, incoterm), so country-name
-# matching is the correct mechanism here, not a fallback.
+# name used in Address records. Used both to decide whether an address is
+# in scope (EU) and to derive the VIES country code when the VAT ID itself
+# has no country prefix.
 # Northern Ireland (XI) can't be distinguished from "United Kingdom" via the
 # standard Frappe country list, so it's intentionally left out here - add it
-# if this instance tracks NI addresses separately.
+# if Northern Ireland addresses need to be tracked separately.
 EU_COUNTRY_CODE_BY_NAME = {
 	"Austria": "AT",
 	"Belgium": "BE",

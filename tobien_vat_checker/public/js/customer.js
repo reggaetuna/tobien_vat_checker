@@ -1,6 +1,5 @@
-// USt-IdNr. bei Ersterfassung/jederzeit manuell pruefen (Ticket-Frage:
-// "Kann diese Funktion auch beim Erfassen von Kunden zum erstmaligen
-// Pruefen verwendet werden?" - ja, ueber denselben Kernaufruf).
+// USt-IdNr. bei der Kunden-Ersterfassung oder jederzeit manuell pruefen.
+// Bei mehreren Adressen zeigt ein Dialog die Auswahl an.
 frappe.ui.form.on("Customer", {
 	refresh(frm) {
 		if (frm.is_new()) return;

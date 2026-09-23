@@ -1,64 +1,35 @@
 """Core VAT/USt-IdNr. validation orchestration.
 
-Ticket reference: "VAT - UID pruefen" (Frederic Tobien).
-
-Scope (2026-09-23, user decision): sales side only for now - Sales Order,
-Sales Invoice, Customer. Purchase Order/Purchase Invoice/Supplier are
-deliberately not wired up yet (their unverified `supplier_address`
-assumption is moot until that's revisited) - adding them back later is
-just re-adding entries to ADDRESS_FIELD_BY_DOCTYPE/PARTY_FIELD_BY_DOCTYPE,
-the hooks.py doc_events/doctype_js, and the fixtures/custom_field.json
-Custom Fields; the orchestration functions below are already
-doctype-agnostic.
+Checks the USt-IdNr./VAT ID stored on an Address against the EU
+Commission's VIES service, and keeps a submittable audit record of every
+check. Currently wired up for the sales side only (Sales Order, Sales
+Invoice, Customer); Purchase Order/Purchase Invoice/Supplier can be added
+by extending ADDRESS_FIELD_BY_DOCTYPE/PARTY_FIELD_BY_DOCTYPE below, the
+hooks.py doc_events/doctype_js, and the fixtures/custom_field.json Custom
+Fields - the orchestration functions here are already doctype-agnostic.
 
 Flow:
-  1. Resolve the address relevant to the document (see ADDRESS_FIELD_BY_DOCTYPE
-     below - ASSUMPTION, verify against the real site, see README).
-  2. Skip entirely if that address is not in the EU (ticket: filter on
-     Territory = EU; implemented via Address.country - see vies.py and the
-     "EU filter" note below for why Territory itself was decided against).
-  3. Call VIES with our own company VAT ID as requester, so VIES returns a
-     requestIdentifier - this is the actual proof-of-check reference EU tax
-     authorities recognise, together with requestDate.
+  1. Resolve the address relevant to the document (ADDRESS_FIELD_BY_DOCTYPE
+     below).
+  2. Skip entirely if that address is not in the EU (filter on
+     Address.country, see vies.py).
+  3. Call VIES with the company's own VAT ID as requester, so VIES returns
+     a requestIdentifier - the proof-of-check reference EU tax authorities
+     recognise, together with requestDate.
   4. Persist everything (raw response included) in a submittable
-     "VAT Validation Log", attach it as a PDF to itself, and link it back to
-     the source document via a custom field.
+     "VAT Validation Log", attach it as a PDF to itself, and link it back
+     to the source document via a custom field.
   5. On before_submit of Sales Order / Sales Invoice, block submission if
      the relevant EU customer's VAT ID did not validate - unless a
-     permitted role has set a logged manual override (VIES outages happen;
-     see vies.VIESError).
+     permitted role has set a logged manual override (for VIES outages,
+     see vies.VIESError) or the check has been switched off via
+     "VAT Check Settings".
 
-CONFIRMED against the real site's Address "Customize Form" export
-(2026-09-23): Address has a custom Data field `tax_id` for the USt-IdNr.,
-and has NO Territory field at all (only `country`, `tax_category`,
-`eori_no`, `incoterm`) - so the EU filter in vies.py being based on
-Address.country isn't a fallback, it's the only option and is correct as
-implemented.
-
-CONFIRMED against the real Sales Order AND Sales Invoice DocType exports
-(2026-09-23): both have `shipping_address_name` (Link, Address) exactly as
-assumed. Also worth noting from those exports: both already have their own
-`tax_id` field, but it's `fetch_from: customer.tax_id` (a standard ERPNext
-Customer-level field) - a different concept from the per-address
-`Address.tax_id` this app checks. Using the address-level field is still
-the right call here: a customer can have several EU addresses, each
-needing its own VAT ID checked, which a single customer-level field can't
-represent.
-
-EU filter, decided (2026-09-23): both Sales Order and Sales Invoice have
-their own `territory` field (Link to "Territory", part of Sales Order's
-`search_fields`), which is arguably closer to the ticket's literal
-"Territory = EU" wording than Address.country. Decided against using it:
-Territory reflects the vendor's own sales-region categorization and isn't
-guaranteed to line up with actual EU membership or be consistently
-maintained, whereas Address.country is a required field and a direct
-statement of geographic fact - staying with the country-based filter in
-vies.py keeps EU-membership determination independent of how disciplined
-Territory bookkeeping happens to be.
-
-Purchase Order/Purchase Invoice support was scoped out for now (see above)
-before their `supplier_address` assumption could be confirmed - revisit
-when purchase-side is back in scope.
+Note on the EU filter: Sales Order/Sales Invoice each also have their own
+`territory` field, but EU membership is determined from `Address.country`
+instead - country is a required field and a direct statement of
+geographic fact, whereas Territory reflects internal sales-region
+categorization and isn't guaranteed to line up with actual EU membership.
 """
 
 import json
@@ -73,9 +44,8 @@ from . import vies
 
 OVERRIDE_ROLES = {"System Manager", "Sales Manager"}
 
-# CONFIRMED against the real Sales Order/Sales Invoice DocType exports
-# (2026-09-23). Purchase Order/Purchase Invoice intentionally left out -
-# sales-only scope for now, see module docstring.
+# Purchase Order/Purchase Invoice intentionally left out - sales-only
+# scope for now, see module docstring.
 ADDRESS_FIELD_BY_DOCTYPE = {
 	"Sales Order": "shipping_address_name",
 	"Sales Invoice": "shipping_address_name",
@@ -86,8 +56,7 @@ PARTY_FIELD_BY_DOCTYPE = {
 	"Sales Invoice": ("Customer", "customer"),
 }
 
-# CONFIRMED against the real Address Customize Form export (2026-09-23):
-# custom Data field, fieldname "tax_id".
+# Custom field on Address holding the USt-IdNr./VAT ID.
 ADDRESS_VAT_FIELDNAME = "tax_id"
 
 
@@ -333,7 +302,7 @@ def get_party_addresses(party_type, party_name):
 def attach_pdf_on_submit(doc, method=None):
 	"""doc_events on_submit for VAT Validation Log - renders the log itself
 	to PDF via the standard print format and attaches it as the auditable
-	proof file (ticket: 'Bestaetigung ... (PDF etc.)')."""
+	proof file."""
 	html = frappe.get_print(doc.doctype, doc.name, print_format=None, doc=doc)
 	pdf_content = get_pdf(html)
 	save_file(
