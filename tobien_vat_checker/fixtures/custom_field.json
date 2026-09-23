@@ -1,6 +1,7 @@
 [
  {
   "doctype": "Custom Field",
+  "name": "Sales Order-custom_vat_validation",
   "dt": "Sales Order",
   "fieldname": "custom_vat_validation",
   "fieldtype": "Link",
@@ -12,6 +13,7 @@
  },
  {
   "doctype": "Custom Field",
+  "name": "Sales Order-custom_vat_override",
   "dt": "Sales Order",
   "fieldname": "custom_vat_override",
   "fieldtype": "Check",
@@ -21,6 +23,7 @@
  },
  {
   "doctype": "Custom Field",
+  "name": "Sales Order-custom_vat_override_reason",
   "dt": "Sales Order",
   "fieldname": "custom_vat_override_reason",
   "fieldtype": "Small Text",
@@ -30,6 +33,7 @@
  },
  {
   "doctype": "Custom Field",
+  "name": "Sales Invoice-custom_vat_validation",
   "dt": "Sales Invoice",
   "fieldname": "custom_vat_validation",
   "fieldtype": "Link",
@@ -41,6 +45,7 @@
  },
  {
   "doctype": "Custom Field",
+  "name": "Sales Invoice-custom_vat_override",
   "dt": "Sales Invoice",
   "fieldname": "custom_vat_override",
   "fieldtype": "Check",
@@ -50,6 +55,7 @@
  },
  {
   "doctype": "Custom Field",
+  "name": "Sales Invoice-custom_vat_override_reason",
   "dt": "Sales Invoice",
   "fieldname": "custom_vat_override_reason",
   "fieldtype": "Small Text",
