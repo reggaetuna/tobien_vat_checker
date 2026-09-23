@@ -1,0 +1,52 @@
+{
+ "actions": [],
+ "creation": "2026-09-24 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled"
+ ],
+ "fields": [
+  {
+   "default": "1",
+   "description": "Schaltet die automatische VIES-Prüfung (inkl. hartem Buchungs-Stopp bei ungültiger/fehlender USt-IdNr.) auf Sales Order/Sales Invoice ein oder aus. Die manuellen \"USt-IdNr. prüfen\"-Buttons auf Address/Customer/Beleg funktionieren unabhängig davon immer.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Automatische Prüfung beim Buchen aktiv"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-09-24 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tobien VAT Checker",
+ "name": "VAT Check Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

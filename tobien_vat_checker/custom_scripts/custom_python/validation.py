@@ -188,6 +188,19 @@ def _compare(vies_value, our_value):
 	return "Uebereinstimmend" if a == b else "Abweichend"
 
 
+def auto_check_enabled():
+	"""Master on/off switch, 'VAT Check Settings' (Single doctype).
+	Only gates the automatic before_submit enforcement below - the manual
+	'jetzt pruefen' buttons (check_now/check_address/check_customer_or_supplier)
+	are explicit user actions and always work regardless of this setting.
+
+	Defaults to enabled (True) if the Single hasn't been saved yet at all -
+	get_single_value returns None in that case, not the field's JSON
+	default, so that's handled explicitly here."""
+	value = frappe.db.get_single_value("VAT Check Settings", "enabled")
+	return True if value is None else bool(value)
+
+
 def enforce_vat_check(doc, method=None):
 	"""doc_events before_submit hook for Sales Order / Sales Invoice /
 	Purchase Order / Purchase Invoice.
@@ -195,6 +208,9 @@ def enforce_vat_check(doc, method=None):
 	Blocks submission if the relevant EU party's VAT ID is missing/invalid,
 	unless a permitted role has ticked the manual override with a reason.
 	"""
+	if not auto_check_enabled():
+		return
+
 	address_field = ADDRESS_FIELD_BY_DOCTYPE.get(doc.doctype)
 	party_type, party_field = PARTY_FIELD_BY_DOCTYPE.get(doc.doctype, (None, None))
 	if not address_field:

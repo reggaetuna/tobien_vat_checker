@@ -57,6 +57,14 @@ gebaut, sodass der Einkauf später einfach durch Ergänzen von Einträgen in
   Übersteuerung wird als Alert protokolliert.
 - **Verlinkung zur SO/SI:** eigenes Feld `custom_vat_validation` (Link auf
   den Log) direkt auf dem Beleg sichtbar.
+- **Ein-/Ausschalten:** eigene Settingsseite **"VAT Check Settings"**
+  (Single-DocType, per Awesomebar-Suche erreichbar) mit einem Häkchen
+  "Automatische Prüfung beim Buchen aktiv". Schaltet ausschließlich den
+  automatischen `before_submit`-Check (inkl. hartem Block) ab — die
+  manuellen "USt-IdNr. prüfen"-Buttons auf Address/Customer/Beleg
+  funktionieren davon unabhängig immer. Standard: aktiv. Nützlich zum
+  Testen/Rollout, ohne die App deinstallieren oder Felder entfernen zu
+  müssen. Berechtigt: System Manager, Sales Manager.
 
 ## Unterschiede zum edevis-Checker (zur Einordnung)
 
