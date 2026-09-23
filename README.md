@@ -1,11 +1,17 @@
-# VAT Compliance
+# Tobien VAT Checker
 
 Frappe/ERPNext v15 Custom-App: prüft USt-IdNr. (VAT ID) von EU-Kunden
 automatisiert über den **VIES REST-Dienst** der EU-Kommission und hinterlegt
 einen für das Finanzamt nachweisbaren, PDF-gestützten Prüfbeleg.
 
 Gebaut für das Ticket **"VAT - UID prüfen"** (Frederic Tobien, erstellt vor
-ca. 1 Monat). Entstanden als eigenständige Schwester-App zu
+ca. 1 Monat) — daher der App-Name. Ursprünglich `vat_compliance` genannt,
+aber umbenannt, weil dieser Name bereits von einem echten, unabhängigen
+Frappe-App ("Bangladesh VAT Compliance" von Invento Software) belegt ist —
+`bench get-app vat_compliance` hätte sonst versehentlich das falsche,
+fremde App installiert statt dieses hier.
+
+Entstanden als eigenständige Schwester-App zu
 [`edevis`](https://github.com/edevis/edevis), das bereits einen
 BZSt-basierten VAT-Checker für Customer/Supplier hat — hier bewusst neu
 konzipiert, weil Scope, Trigger-Zeitpunkt und Prüfquelle abweichen (siehe
@@ -104,10 +110,14 @@ Ticket-Scopes.
 ## Installation (auf einem echten Bench)
 
 ```bash
-bench get-app vat_compliance /pfad/zu/diesem/repo
-bench --site <site> install-app vat_compliance
+bench get-app https://github.com/reggaetuna/tobien_vat_checker
+bench --site <site> install-app tobien_vat_checker
 bench --site <site> migrate
 ```
+
+Immer mit der vollen Repo-URL installieren, nie nur mit dem bloßen Namen
+(`bench get-app tobien_vat_checker` ohne URL würde bench veranlassen, den
+Namen im öffentlichen Frappe-App-Verzeichnis nachzuschlagen).
 
 Die Custom Fields (`custom_vat_validation`, `custom_vat_override`,
 `custom_vat_override_reason` auf SO/SI) kommen als Fixture

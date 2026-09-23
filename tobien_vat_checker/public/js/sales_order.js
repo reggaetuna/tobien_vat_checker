@@ -8,7 +8,7 @@ frappe.ui.form.on("Sales Order", {
 
 		frm.add_custom_button(__("USt-IdNr. jetzt prüfen"), () => {
 			frappe.call({
-				method: "vat_compliance.custom_scripts.custom_python.validation.check_now",
+				method: "tobien_vat_checker.custom_scripts.custom_python.validation.check_now",
 				args: { reference_doctype: frm.doctype, reference_name: frm.doc.name },
 				freeze: true,
 				freeze_message: __("Prüfe USt-IdNr. via VIES..."),

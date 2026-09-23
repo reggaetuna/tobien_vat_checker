@@ -1,5 +1,5 @@
-app_name = "vat_compliance"
-app_title = "VAT Compliance"
+app_name = "tobien_vat_checker"
+app_title = "Tobien VAT Checker"
 app_publisher = "phamos.eu"
 app_description = "EU-USt-IdNr. Pruefung (VIES) fuer Sales-Belege"
 app_email = "support@phamos.eu"
@@ -19,13 +19,13 @@ doctype_js = {
 # ---------------
 doc_events = {
 	"Sales Order": {
-		"before_submit": "vat_compliance.custom_scripts.custom_python.validation.enforce_vat_check"
+		"before_submit": "tobien_vat_checker.custom_scripts.custom_python.validation.enforce_vat_check"
 	},
 	"Sales Invoice": {
-		"before_submit": "vat_compliance.custom_scripts.custom_python.validation.enforce_vat_check"
+		"before_submit": "tobien_vat_checker.custom_scripts.custom_python.validation.enforce_vat_check"
 	},
 	"VAT Validation Log": {
-		"on_submit": "vat_compliance.custom_scripts.custom_python.validation.attach_pdf_on_submit"
+		"on_submit": "tobien_vat_checker.custom_scripts.custom_python.validation.attach_pdf_on_submit"
 	},
 }
 

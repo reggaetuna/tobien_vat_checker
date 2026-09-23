@@ -7,7 +7,7 @@ frappe.ui.form.on("Customer", {
 
 		frm.add_custom_button(__("USt-IdNr. prüfen"), () => {
 			frappe.call({
-				method: "vat_compliance.custom_scripts.custom_python.validation.get_party_addresses",
+				method: "tobien_vat_checker.custom_scripts.custom_python.validation.get_party_addresses",
 				args: { party_type: "Customer", party_name: frm.doc.name },
 				callback: (r) => {
 					const addresses = r.message || [];
@@ -47,7 +47,7 @@ frappe.ui.form.on("Customer", {
 
 function run_check(frm, party_type, address_name) {
 	frappe.call({
-		method: "vat_compliance.custom_scripts.custom_python.validation.check_customer_or_supplier",
+		method: "tobien_vat_checker.custom_scripts.custom_python.validation.check_customer_or_supplier",
 		args: { party_type: party_type, party_name: frm.doc.name, address_name: address_name },
 		freeze: true,
 		freeze_message: __("Prüfe USt-IdNr. via VIES..."),

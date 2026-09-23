@@ -1,5 +1,5 @@
 [project]
-name = "vat_compliance"
+name = "tobien_vat_checker"
 authors = [
     { name = "phamos.eu", email = "support@phamos.eu"}
 ]
