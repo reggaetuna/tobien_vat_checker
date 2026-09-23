@@ -31,7 +31,11 @@ gebaut, sodass der Einkauf später einfach durch Ergänzen von Einträgen in
 - **Wann geprüft wird:** automatisch bei `Submit` von Sales Order und Sales
   Invoice — plus manueller "USt-IdNr. jetzt prüfen"-Button auf dem Beleg
   (damit der Sachbearbeiter nicht erst beim harten Submit-Block überrascht
-  wird) und auf Customer für die Ersterfassung.
+  wird), direkt auf der **Address** (dort steht `tax_id` ja tatsächlich —
+  der direkteste Weg, v.a. wenn ein Kunde mehrere EU-Adressen hat) sowie
+  zusätzlich auf **Customer** als Komfort-Zugang für die Ersterfassung
+  (wählt bei mehreren Adressen eine per Dialog aus, ruft intern dieselbe
+  Adress-Prüfung auf).
 - **Wo geprüft wird:** nur wenn die relevante Adresse in der EU liegt (Filter
   über `Address.country`, siehe `vies.EU_COUNTRY_CODE_BY_NAME`). Nicht-EU-
   Adressen werden komplett übersprungen (kein Fehler, kein Log-Eintrag).

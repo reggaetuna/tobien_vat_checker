@@ -13,6 +13,7 @@ doctype_js = {
 	"Sales Order": "public/js/sales_order.js",
 	"Sales Invoice": "public/js/sales_invoice.js",
 	"Customer": "public/js/customer.js",
+	"Address": "public/js/address.js",
 }
 
 # Document Events

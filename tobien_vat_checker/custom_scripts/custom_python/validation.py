@@ -274,6 +274,28 @@ def check_customer_or_supplier(party_type, party_name, address_name):
 
 
 @frappe.whitelist()
+def check_address(address_name):
+	"""'USt-IdNr. pruefen' button directly on the Address form - the more
+	direct entry point than the Customer-level button, since Address.tax_id
+	is literally what's being checked (a customer can have several EU
+	addresses, each needing its own check). Resolves the linked Customer
+	purely to fill in the VAT Validation Log's party fields."""
+	link = frappe.get_all(
+		"Dynamic Link",
+		filters={"parenttype": "Address", "parent": address_name, "link_doctype": "Customer"},
+		fields=["link_name"],
+		limit=1,
+	)
+	if not link:
+		frappe.throw(_("Diese Adresse ist mit keinem Customer verknuepft."))
+
+	log = validate_address_vat(address_name, "Customer", link[0].link_name)
+	if log is None:
+		return {"skipped": True, "message": _("Adresse liegt ausserhalb der EU - keine Pruefung noetig.")}
+	return {"skipped": False, "log": log.name, "valid": bool(log.valid)}
+
+
+@frappe.whitelist()
 def get_party_addresses(party_type, party_name):
 	"""Addresses linked to a Customer/Supplier, for the 'welche Adresse pruefen'
 	picker on the Customer/Supplier form button."""
