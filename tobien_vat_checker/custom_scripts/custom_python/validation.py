@@ -163,11 +163,12 @@ def auto_check_enabled():
 	'jetzt pruefen' buttons (check_now/check_address/check_customer_or_supplier)
 	are explicit user actions and always work regardless of this setting.
 
-	Defaults to enabled (True) if the Single hasn't been saved yet at all -
-	get_single_value returns None in that case, not the field's JSON
-	default, so that's handled explicitly here."""
-	value = frappe.db.get_single_value("VAT Check Settings", "enabled")
-	return True if value is None else bool(value)
+	Defaults to enabled if the Single hasn't been saved yet at all. Don't use
+	frappe.db.get_single_value here: for a Check field it casts a missing
+	row to 0, which silently disabled the check on fresh installs. Loading
+	the doc falls back to frappe.new_doc for an unsaved Single, which
+	applies the field's JSON default ("1")."""
+	return bool(frappe.get_cached_doc("VAT Check Settings").enabled)
 
 
 def enforce_vat_check(doc, method=None):
