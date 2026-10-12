@@ -16,6 +16,13 @@ doctype_js = {
 	"Address": "public/js/address.js",
 }
 
+# Connections tab: link VAT Validation Logs on the documents/customer
+override_doctype_dashboards = {
+	"Sales Order": "tobien_vat_checker.custom_scripts.custom_python.dashboards.sales_order",
+	"Sales Invoice": "tobien_vat_checker.custom_scripts.custom_python.dashboards.sales_invoice",
+	"Customer": "tobien_vat_checker.custom_scripts.custom_python.dashboards.customer",
+}
+
 # Document Events
 # ---------------
 doc_events = {

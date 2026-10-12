@@ -35,6 +35,11 @@ PDF-backed audit record recognized as proof by tax authorities.
   override is logged as an alert.
 - **Linked to the SO/SI:** a dedicated field `custom_vat_validation` (link
   to the log) is visible directly on the document.
+- **Connections:** VAT Validation Logs appear in the Connections tab of
+  Sales Order, Sales Invoice (both "Reference") and Customer ("Pre
+  Sales"). The log list and form show the result in green (valid) / red
+  (invalid). Logs of failed checks are committed immediately, so they
+  survive the rollback caused by the submit block.
 - **On/off switch:** a dedicated settings page **"VAT Check Settings"**
   (Single doctype, reachable via the awesomebar search) with a checkbox
   "Automatic check on submit enabled". Only disables the automatic

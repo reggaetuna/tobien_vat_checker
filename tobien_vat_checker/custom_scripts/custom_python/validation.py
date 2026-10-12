@@ -36,7 +36,7 @@ import json
 
 import frappe
 from frappe import _
-from frappe.utils import now_datetime
+from frappe.utils import get_link_to_form, now_datetime
 from frappe.utils.pdf import get_pdf
 from frappe.utils.file_manager import save_file
 
@@ -126,8 +126,7 @@ def validate_address_vat(address_name, party_type, party_name, reference_doctype
 			log.valid = 0
 			log.error_message = str(e)
 			log.raw_response = None
-			log.insert(ignore_permissions=True)
-			log.submit()
+			_persist(log)
 			raise
 		else:
 			log.valid = 1 if result.get("valid") else 0
@@ -144,9 +143,21 @@ def validate_address_vat(address_name, party_type, party_name, reference_doctype
 					country_code, vat_number
 				)
 
+	_persist(log)
+	return log
+
+
+def _persist(log):
+	"""Insert + submit the log. A failed check is committed right away:
+	the caller (enforce_vat_check) then throws to block the submit, and
+	the request rollback would otherwise delete the very log that
+	documents why. Runs in before_submit, before the Sales Order/Invoice
+	itself is written, so the commit doesn't persist a half-submitted
+	document."""
 	log.insert(ignore_permissions=True)
 	log.submit()
-	return log
+	if not log.valid:
+		frappe.db.commit()  # nosemgrep
 
 
 def _compare(vies_value, our_value):
@@ -213,8 +224,8 @@ def enforce_vat_check(doc, method=None):
 		frappe.throw(
 			_("USt-IdNr.-Pruefung (VIES) fehlgeschlagen, Beleg kann nicht gebucht werden: {0}"
 				"<br>Falls der Dienst nachweislich down ist, kann ein berechtigter Nutzer "
-				"(Sales/Purchase Manager) die Pruefung im Feld 'VAT Override' mit Begruendung "
-				"manuell uebersteuern.").format(e)
+				"({1}) die Pruefung im Feld 'VAT Override' mit Begruendung "
+				"manuell uebersteuern.").format(e, ", ".join(sorted(OVERRIDE_ROLES)))
 		)
 
 	if log is None:
@@ -225,7 +236,12 @@ def enforce_vat_check(doc, method=None):
 	if not log.valid:
 		frappe.throw(
 			_("USt-IdNr. der Adresse {0} ist laut VIES ungueltig ({1}). Beleg kann nicht gebucht "
-				"werden. Pruefdetails: {2}").format(address_name, log.get("vat_number"), log.name)
+				"werden. Pruefdetails: {2}").format(
+				address_name,
+				f"{log.country_code or ''}{log.vat_number or ''}",
+				get_link_to_form("VAT Validation Log", log.name),
+			),
+			title=_("USt-IdNr. ungueltig"),
 		)
 
 
