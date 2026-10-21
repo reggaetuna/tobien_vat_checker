@@ -245,6 +245,16 @@ def enforce_vat_check(doc, method=None):
 		)
 
 
+def _manual_check(*args):
+	"""validate_address_vat for the manual buttons: a VIES service error is
+	shown as a normal message dialog instead of a raw traceback. The failed
+	check is still logged (validate_address_vat persists it before raising)."""
+	try:
+		return validate_address_vat(*args)
+	except vies.VIESError as e:
+		frappe.throw(str(e), title=_("VIES nicht verfuegbar"))
+
+
 @frappe.whitelist()
 def check_now(reference_doctype, reference_name):
 	"""Manual 'jetzt pruefen' button target, callable before submit so the
@@ -259,7 +269,7 @@ def check_now(reference_doctype, reference_name):
 	if not address_name:
 		frappe.throw(_("Kein Wert in Feld '{0}' auf diesem Beleg.").format(address_field))
 
-	log = validate_address_vat(address_name, party_type, doc.get(party_field), reference_doctype, reference_name)
+	log = _manual_check(address_name, party_type, doc.get(party_field), reference_doctype, reference_name)
 	if log is None:
 		return {"skipped": True, "message": _("Adresse liegt ausserhalb der EU - keine Pruefung noetig.")}
 	return {"skipped": False, "log": log.name, "valid": bool(log.valid)}
@@ -269,7 +279,7 @@ def check_now(reference_doctype, reference_name):
 def check_customer_or_supplier(party_type, party_name, address_name):
 	"""Used by the 'USt-IdNr. pruefen' button on Customer/Supplier forms for
 	initial validation at data entry time."""
-	log = validate_address_vat(address_name, party_type, party_name)
+	log = _manual_check(address_name, party_type, party_name)
 	if log is None:
 		return {"skipped": True, "message": _("Adresse liegt ausserhalb der EU - keine Pruefung noetig.")}
 	return {"skipped": False, "log": log.name, "valid": bool(log.valid)}
@@ -291,7 +301,7 @@ def check_address(address_name):
 	if not link:
 		frappe.throw(_("Diese Adresse ist mit keinem Customer verknuepft."))
 
-	log = validate_address_vat(address_name, "Customer", link[0].link_name)
+	log = _manual_check(address_name, "Customer", link[0].link_name)
 	if log is None:
 		return {"skipped": True, "message": _("Adresse liegt ausserhalb der EU - keine Pruefung noetig.")}
 	return {"skipped": False, "log": log.name, "valid": bool(log.valid)}

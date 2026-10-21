@@ -4,10 +4,29 @@ See https://ec.europa.eu/taxation_customs/vies/ for the interactive form
 this mirrors.
 """
 
+import time
+
 import frappe
 import requests
 
 VIES_REST_URL = "https://ec.europa.eu/taxation_customs/vies/rest-api/check-vat-number"
+
+# VIES error codes that mean "busy/down right now, try again later" rather
+# than anything being wrong with the request. MS_* refers to the national
+# database of the member state that issued the VAT ID being checked.
+TRANSIENT_ERRORS = {
+	"SERVICE_UNAVAILABLE",
+	"MS_UNAVAILABLE",
+	"TIMEOUT",
+	"GLOBAL_MAX_CONCURRENT_REQ",
+	"GLOBAL_MAX_CONCURRENT_REQ_TIME",
+	"MS_MAX_CONCURRENT_REQ",
+	"MS_MAX_CONCURRENT_REQ_TIME",
+}
+
+# Seconds to wait before each retry of a transient error. Kept short since
+# the user is waiting behind a freeze dialog / the submit request.
+RETRY_DELAYS = (2, 4)
 
 # Country codes VIES accepts, keyed by the exact Frappe "Country" doctype
 # name used in Address records. Used both to decide whether an address is
@@ -71,7 +90,25 @@ def check_vat_number(country_code, vat_number, requester_country_code=None, requ
 	still report valid=False for a genuinely invalid VAT ID). Raises
 	VIESError if the service could not be reached or returned a service-level
 	error (e.g. MS_MAX_CONCURRENT_REQ, MS_UNAVAILABLE, INVALID_INPUT).
+	Transient errors (TRANSIENT_ERRORS, network failures, HTTP 5xx) are
+	retried with RETRY_DELAYS before giving up.
 	"""
+	for delay in RETRY_DELAYS:
+		try:
+			return _call_vies(country_code, vat_number, requester_country_code, requester_vat_number, timeout)
+		except _TransientVIESError:
+			time.sleep(delay)
+	try:
+		return _call_vies(country_code, vat_number, requester_country_code, requester_vat_number, timeout)
+	except _TransientVIESError as e:
+		raise VIESError(str(e))
+
+
+class _TransientVIESError(VIESError):
+	"""Internal marker for errors worth retrying."""
+
+
+def _call_vies(country_code, vat_number, requester_country_code, requester_vat_number, timeout):
 	payload = {
 		"countryCode": country_code,
 		"vatNumber": vat_number,
@@ -84,14 +121,15 @@ def check_vat_number(country_code, vat_number, requester_country_code=None, requ
 		response = requests.post(VIES_REST_URL, json=payload, timeout=timeout)
 	except requests.RequestException as e:
 		frappe.log_error(title="VIES request failed", message=str(e))
-		raise VIESError(frappe._("VIES-Dienst nicht erreichbar: {0}").format(e))
+		raise _TransientVIESError(frappe._("VIES-Dienst nicht erreichbar: {0}").format(e))
 
 	if response.status_code != 200:
 		frappe.log_error(
 			title="VIES non-200 response",
 			message=f"status={response.status_code} body={response.text[:2000]}",
 		)
-		raise VIESError(
+		error_cls = _TransientVIESError if response.status_code >= 500 else VIESError
+		raise error_cls(
 			frappe._("VIES antwortete mit Fehler ({0}): {1}").format(response.status_code, response.text[:300])
 		)
 
@@ -103,7 +141,15 @@ def check_vat_number(country_code, vat_number, requester_country_code=None, requ
 	# error in some deployments; be defensive about both shapes.
 	if data.get("actionSucceed") is False or data.get("errorWrappers"):
 		errors = data.get("errorWrappers") or [{"error": data.get("error", "unknown")}]
-		message = "; ".join(str(e.get("error", e)) for e in errors)
+		codes = [str(e.get("error", e)) for e in errors]
+		message = "; ".join(codes)
+		if set(codes) & TRANSIENT_ERRORS:
+			raise _TransientVIESError(
+				frappe._(
+					"Der VIES-Dienst fuer {0} ist gerade ueberlastet oder nicht erreichbar ({1}). "
+					"Bitte in ein paar Minuten erneut versuchen."
+				).format(country_code, message)
+			)
 		raise VIESError(frappe._("VIES konnte die Anfrage nicht verarbeiten: {0}").format(message))
 
 	return data
