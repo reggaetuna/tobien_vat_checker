@@ -1,18 +1,26 @@
-// USt-IdNr.-Pruefung (VIES) - manueller "jetzt pruefen" Button vor dem Buchen,
-// damit der harte Submit-Block (siehe validation.enforce_vat_check) niemanden
-// ueberrascht. Ist VIES ueberlastet, laeuft die Pruefung im Hintergrund weiter
-// (validation.retry_pending_checks), Status steht in custom_vat_status.
+// USt-IdNr.-Pruefung (VIES) - laeuft nach dem Buchen im Hintergrund
+// (validation.start_vat_check), Ergebnis steht in custom_vat_status und
+// wird oben neben dem Belegstatus (z. B. "To Deliver and Bill") als
+// farbiger Status angezeigt. "jetzt pruefen" geht vor dem Buchen und zum
+// erneuten Pruefen, wenn die USt-IdNr. auf der Adresse korrigiert wurde.
 frappe.ui.form.on("Sales Order", {
-	refresh(frm) {
-		if (frm.doc.docstatus !== 0 || frm.is_new()) return;
-		if (!frm.doc.shipping_address_name) return;
+	setup(frm) {
+		// status changes from the background check, see validation._store_vat_status
+		frappe.realtime.on("vat_status_changed", (data) => {
+			if (data.doctype !== frm.doctype || data.name !== frm.doc.name) return;
+			frm.doc.custom_vat_status = data.status;
+			frm.doc.custom_vat_validation = data.log;
+			frm.refresh_fields(["custom_vat_status", "custom_vat_validation"]);
+			show_vat_indicator(frm);
+		});
+	},
 
-		if (frm.doc.custom_vat_status === "VIES ueberlastet - Pruefung laeuft") {
-			frm.set_intro(
-				__("VIES ist überlastet - die USt-IdNr. wird im Hintergrund automatisch weiter geprüft. Sobald das Ergebnis da ist, kommt eine Benachrichtigung."),
-				"orange"
-			);
-		}
+	refresh(frm) {
+		show_vat_indicator(frm);
+
+		if (frm.is_new() || frm.doc.docstatus === 2) return;
+		if (!frm.doc.shipping_address_name) return;
+		if (frm.doc.docstatus === 1 && frm.doc.custom_vat_status === "Gueltig") return;
 
 		frm.add_custom_button(__("USt-IdNr. jetzt prüfen"), () => {
 			frappe.call({
@@ -41,3 +49,19 @@ frappe.ui.form.on("Sales Order", {
 		});
 	},
 });
+
+function show_vat_indicator(frm) {
+	frm.page.wrapper.find(".vat-status-indicator").remove();
+	const indicator = {
+		"Pruefung laeuft": ["orange", __("VAT: Prüfung läuft")],
+		"VIES ueberlastet - Pruefung laeuft": ["orange", __("VAT: VIES überlastet")],
+		Gueltig: ["green", __("VAT gültig")],
+		Ungueltig: ["red", __("VAT ungültig")],
+	}[frm.doc.custom_vat_status];
+	if (!indicator) return;
+
+	$(`<span class="indicator-pill whitespace-nowrap vat-status-indicator ${indicator[0]}"
+			style="margin-left: var(--margin-sm)"></span>`)
+		.append($("<span>").text(indicator[1]))
+		.insertAfter(frm.page.indicator);
+}

@@ -6,9 +6,11 @@ PDF-backed audit record recognized as proof by tax authorities.
 
 ## What the app does
 
-- **When checks run:** automatically on `Submit` of Sales Order and Sales
-  Invoice — plus a manual "Check VAT ID now" button on the document (so
-  the user isn't surprised by the hard submit block), directly on the
+- **When checks run:** automatically after `Submit` of Sales Order and
+  Sales Invoice, in the background (`on_submit` → queued job), so the user
+  can keep working — plus a manual "Check VAT ID now" button on the
+  document (before submit, or to re-check a submitted document after the
+  VAT ID was corrected on the address), directly on the
   **Address** (that's where `tax_id` lives — the most direct route,
   especially when a customer has several EU addresses), and additionally
   on **Customer** as a convenience entry point for initial data entry
@@ -28,22 +30,29 @@ PDF-backed audit record recognized as proof by tax authorities.
   with timestamp, consultation number, the raw VIES response (JSON), and
   a name/address match — automatically attached to itself as a PDF
   (`on_submit` → standard print format → PDF attachment).
-- **Submit block:** an invalid or missing VAT ID on an EU address prevents
-  the document from being submitted (`before_submit`, `frappe.throw`). An
-  override field (`custom_vat_override` + reason) lets System/Sales
-  Managers submit anyway in the event of a demonstrable VIES outage — the
-  override is logged as an alert.
+- **No submit block:** the document is always submitted. The result is
+  stored in `custom_vat_status` (Pruefung laeuft / VIES ueberlastet -
+  Pruefung laeuft / Gueltig / Ungueltig). The Sales Order shows it as a
+  coloured indicator next to the document status (e.g. "To Deliver and
+  Bill"), updated live when the background check finishes. If VIES is
+  busy, a scheduler job retries every 2 minutes until there is a result.
+  An invalid result sends a notification (bell) to the document's owner
+  and last editor. The old override fields (`custom_vat_override` +
+  reason) are hidden, existing values are kept.
+- **Daily report:** every day at 07:00, all open Sales Orders (not
+  Completed/Closed) and Sales Invoices (not cancelled) with an invalid VAT
+  ID are mailed to the recipients set in "VAT Check Settings" — only if
+  there are any.
 - **Linked to the SO/SI:** a dedicated field `custom_vat_validation` (link
   to the log) is visible directly on the document.
 - **Connections:** VAT Validation Logs appear in the Connections tab of
   Sales Order, Sales Invoice (both "Reference") and Customer ("Pre
   Sales"). The log list and form show the result in green (valid) / red
-  (invalid). Logs of failed checks are committed immediately, so they
-  survive the rollback caused by the submit block.
+  (invalid).
 - **On/off switch:** a dedicated settings page **"VAT Check Settings"**
   (Single doctype, reachable via the awesomebar search) with a checkbox
-  "Automatic check on submit enabled". Only disables the automatic
-  `before_submit` check (including the hard block) — the manual "Check
+  "Automatic check after submit enabled" and the recipients of the daily
+  report. The checkbox only disables the automatic check — the manual "Check
   VAT ID" buttons on Address/Customer/document keep working regardless.
   Default: enabled. Permitted roles: System Manager, Sales Manager.
 
@@ -75,6 +84,6 @@ Always install with the full repo URL, never with the bare name
 (`bench get-app tobien_vat_checker` without a URL would make bench look
 the name up in the public Frappe app directory).
 
-The custom fields (`custom_vat_validation`, `custom_vat_override`,
-`custom_vat_override_reason` on SO/SI) ship as a fixture
+The custom fields (`custom_vat_status`, `custom_vat_validation`,
+`custom_vat_override`, `custom_vat_override_reason` on SO/SI) ship as a fixture
 (`fixtures/custom_field.json`) and are imported during `migrate`.

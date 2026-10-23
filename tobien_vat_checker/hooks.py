@@ -28,11 +28,13 @@ override_doctype_dashboards = {
 doc_events = {
 	"Sales Order": {
 		"validate": "tobien_vat_checker.custom_scripts.custom_python.validation.keep_vat_status",
-		"before_submit": "tobien_vat_checker.custom_scripts.custom_python.validation.enforce_vat_check",
+		"before_update_after_submit": "tobien_vat_checker.custom_scripts.custom_python.validation.keep_vat_status",
+		"on_submit": "tobien_vat_checker.custom_scripts.custom_python.validation.start_vat_check",
 	},
 	"Sales Invoice": {
 		"validate": "tobien_vat_checker.custom_scripts.custom_python.validation.keep_vat_status",
-		"before_submit": "tobien_vat_checker.custom_scripts.custom_python.validation.enforce_vat_check",
+		"before_update_after_submit": "tobien_vat_checker.custom_scripts.custom_python.validation.keep_vat_status",
+		"on_submit": "tobien_vat_checker.custom_scripts.custom_python.validation.start_vat_check",
 	},
 	"VAT Validation Log": {
 		"on_submit": "tobien_vat_checker.custom_scripts.custom_python.validation.attach_pdf_on_submit"
@@ -41,11 +43,13 @@ doc_events = {
 
 # Scheduled Tasks
 # ---------------
-# Keeps retrying drafts whose check hit a busy VIES, see
-# validation.retry_pending_checks.
+# retry_pending_checks: keeps retrying documents whose check hit a busy
+# VIES. send_invalid_vat_report: daily mail of all open documents with an
+# invalid VAT ID.
 scheduler_events = {
 	"cron": {
 		"*/2 * * * *": ["tobien_vat_checker.custom_scripts.custom_python.validation.retry_pending_checks"],
+		"0 7 * * *": ["tobien_vat_checker.custom_scripts.custom_python.validation.send_invalid_vat_report"],
 	},
 }
 

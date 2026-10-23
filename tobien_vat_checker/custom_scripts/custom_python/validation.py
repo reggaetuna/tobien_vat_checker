@@ -19,15 +19,17 @@ Flow:
   4. Persist everything (raw response included) in a submittable
      "VAT Validation Log", attach it as a PDF to itself, and link it back
      to the source document via a custom field.
-  5. On before_submit of Sales Order / Sales Invoice, block submission if
-     the relevant EU customer's VAT ID did not validate - unless a
-     permitted role has set a logged manual override or the check has been
-     switched off via "VAT Check Settings".
-  6. If VIES is busy (vies.VIESUnavailable), nothing is logged: the draft
-     gets custom_vat_status = VAT_STATUS_PENDING and retry_pending_checks
-     (scheduler, every 2 minutes) keeps trying until VIES answers, then
-     sets the final status and notifies the user. A valid result is
-     reused at the next submit instead of asking VIES again.
+  5. On on_submit of Sales Order / Sales Invoice, the submit goes through
+     and the check runs in the background (start_vat_check ->
+     run_vat_check); custom_vat_status shows "Pruefung laeuft" until the
+     result is there. The Sales Order form shows the status as a coloured
+     indicator next to the document status. A valid result from 'jetzt
+     pruefen' on the draft is reused instead of asking VIES again.
+  6. If VIES is busy (vies.VIESUnavailable), nothing is logged: the
+     document gets custom_vat_status = VAT_STATUS_PENDING and
+     retry_pending_checks (scheduler, every 2 minutes) keeps trying until
+     VIES answers. An invalid result notifies the user, and
+     send_invalid_vat_report mails all open invalid documents daily.
 
 Note on the EU filter: Sales Order/Sales Invoice each also have their own
 `territory` field, but EU membership is determined from `Address.country`
@@ -41,13 +43,11 @@ import json
 import frappe
 from frappe import _
 from frappe.desk.doctype.notification_log.notification_log import enqueue_create_notification
-from frappe.utils import get_link_to_form, now_datetime
+from frappe.utils import escape_html, formatdate, get_link_to_form, now_datetime
 from frappe.utils.pdf import get_pdf
 from frappe.utils.file_manager import save_file
 
 from . import vies
-
-OVERRIDE_ROLES = {"System Manager", "Sales Manager"}
 
 # Purchase Order/Purchase Invoice intentionally left out - sales-only
 # scope for now, see module docstring.
@@ -65,9 +65,12 @@ PARTY_FIELD_BY_DOCTYPE = {
 ADDRESS_VAT_FIELDNAME = "tax_id"
 
 # Options of the custom_vat_status Select field on Sales Order/Invoice.
+VAT_STATUS_CHECKING = "Pruefung laeuft"
 VAT_STATUS_PENDING = "VIES ueberlastet - Pruefung laeuft"
 VAT_STATUS_VALID = "Gueltig"
 VAT_STATUS_INVALID = "Ungueltig"
+# no result yet, retry_pending_checks keeps trying
+PENDING_STATUSES = (VAT_STATUS_CHECKING, VAT_STATUS_PENDING)
 
 
 def _own_company_vat(company):
@@ -158,16 +161,8 @@ def validate_address_vat(address_name, party_type, party_name, reference_doctype
 
 
 def _persist(log):
-	"""Insert + submit the log. A failed check is committed right away:
-	the caller (enforce_vat_check) then throws to block the submit, and
-	the request rollback would otherwise delete the very log that
-	documents why. Runs in before_submit, before the Sales Order/Invoice
-	itself is written, so the commit doesn't persist a half-submitted
-	document."""
 	log.insert(ignore_permissions=True)
 	log.submit()
-	if not log.valid:
-		frappe.db.commit()  # nosemgrep
 
 
 def _compare(vies_value, our_value):
@@ -180,7 +175,7 @@ def _compare(vies_value, our_value):
 
 def auto_check_enabled():
 	"""Master on/off switch, 'VAT Check Settings' (Single doctype).
-	Only gates the automatic before_submit enforcement below - the manual
+	Only gates the automatic check after submit below - the manual
 	'jetzt pruefen' buttons (check_now/check_address/check_customer_or_supplier)
 	are explicit user actions and always work regardless of this setting.
 
@@ -192,81 +187,61 @@ def auto_check_enabled():
 	return bool(frappe.get_cached_doc("VAT Check Settings").enabled)
 
 
-def enforce_vat_check(doc, method=None):
-	"""doc_events before_submit hook for Sales Order / Sales Invoice /
-	Purchase Order / Purchase Invoice.
+def start_vat_check(doc, method=None):
+	"""doc_events on_submit hook for Sales Order / Sales Invoice.
 
-	Blocks submission if the relevant EU party's VAT ID is missing/invalid,
-	unless a permitted role has ticked the manual override with a reason.
-	"""
+	Doesn't block the submit: the check runs afterwards in the background
+	(run_vat_check), so the user can keep working. The result lands in
+	custom_vat_status, invalid ones also in the daily
+	send_invalid_vat_report."""
 	if not auto_check_enabled():
 		return
-
-	address_field = ADDRESS_FIELD_BY_DOCTYPE.get(doc.doctype)
-	party_type, party_field = PARTY_FIELD_BY_DOCTYPE.get(doc.doctype, (None, None))
-	if not address_field:
-		return
-
-	address_name = doc.get(address_field)
+	address_name = doc.get(ADDRESS_FIELD_BY_DOCTYPE[doc.doctype])
 	if not address_name:
-		# No delivery/supplier address set at all - nothing to check against,
-		# leave to existing mandatory-field validation elsewhere.
 		return
-
-	party_name = doc.get(party_field)
-
-	if doc.get("custom_vat_override") and doc.get("custom_vat_override_reason"):
-		if frappe.session.user != "Administrator" and not (set(frappe.get_roles()) & OVERRIDE_ROLES):
-			frappe.throw(_("Nur {0} duerfen die USt-IdNr.-Pruefung manuell uebersteuern.").format(
-				", ".join(OVERRIDE_ROLES)
-			))
-		frappe.msgprint(
-			_("USt-IdNr.-Pruefung manuell uebersteuert von {0}: {1}").format(
-				frappe.session.user, doc.custom_vat_override_reason
-			),
-			alert=True,
-		)
+	if not vies.is_eu_country(frappe.db.get_value("Address", address_name, "country")):
 		return
+	if _reusable_valid_log(doc, address_name):
+		return  # already checked via 'jetzt pruefen' before the submit
+	_store_vat_status(doc, VAT_STATUS_CHECKING)
+	frappe.enqueue(
+		"tobien_vat_checker.custom_scripts.custom_python.validation.run_vat_check",
+		doctype=doc.doctype,
+		name=doc.name,
+		enqueue_after_commit=True,
+	)
 
-	log = _reusable_valid_log(doc, address_name)
-	if not log:
-		try:
-			log = validate_address_vat(address_name, party_type, party_name, doc.doctype, doc.name)
-		except vies.VIESUnavailable:
+
+def run_vat_check(doctype, name):
+	"""Background job queued by start_vat_check."""
+	doc = frappe.get_doc(doctype, name)
+	if doc.docstatus == 2 or doc.get("custom_vat_status") not in PENDING_STATUSES:
+		return  # cancelled meanwhile, or retry_pending_checks got there first
+	_run_check(doc)
+
+
+def _run_check(doc):
+	"""Check one document and store the result. A busy VIES leaves it at
+	VAT_STATUS_PENDING for retry_pending_checks."""
+	try:
+		log = _check_document(doc)
+	except vies.VIESUnavailable:
+		if doc.get("custom_vat_status") != VAT_STATUS_PENDING:
 			_store_vat_status(doc, VAT_STATUS_PENDING)
-			frappe.db.commit()  # nosemgrep - keep the status through the throw's rollback
-			frappe.throw(
-				_("Der VIES-Dienst ist gerade ueberlastet. Die USt-IdNr. wird im Hintergrund automatisch "
-					"weiter geprueft (Status '{0}'). Sobald ein Ergebnis da ist, kommt eine Benachrichtigung "
-					"und der Beleg kann gebucht werden.").format(VAT_STATUS_PENDING),
-				title=_("VIES ueberlastet"),
-			)
+		return
 
 	if log is None:
-		return  # not an EU address, nothing to enforce
-
-	if log.valid:
-		# set on the doc itself, written by the submit that follows
-		doc.custom_vat_status = VAT_STATUS_VALID
-		doc.custom_vat_validation = log.name
-	else:
-		_store_vat_status(doc, VAT_STATUS_INVALID, log.name)
-		frappe.db.commit()  # nosemgrep - keep the status through the throw's rollback
-		frappe.throw(
-			_("USt-IdNr. der Adresse {0} ist laut VIES ungueltig ({1}). Beleg kann nicht gebucht "
-				"werden. Pruefdetails: {2}").format(
-				address_name,
-				f"{log.country_code or ''}{log.vat_number or ''}",
-				get_link_to_form("VAT Validation Log", log.name),
-			),
-			title=_("USt-IdNr. ungueltig"),
-		)
+		_store_vat_status(doc, None)  # address removed or no longer EU
+		return
+	_store_vat_status(doc, VAT_STATUS_VALID if log.valid else VAT_STATUS_INVALID, log.name)
+	if not log.valid:
+		_notify_invalid(doc, log)
 
 
 def _reusable_valid_log(doc, address_name):
-	"""The valid check already done for this draft (via 'jetzt pruefen' or
-	retry_pending_checks), so submit doesn't have to ask VIES again - as
-	long as it was for the same address and the same VAT ID."""
+	"""The valid check already done for this draft (via 'jetzt pruefen'),
+	so submit doesn't have to ask VIES again - as long as it was for the
+	same address and the same VAT ID."""
 	if doc.get("custom_vat_status") != VAT_STATUS_VALID or not doc.get("custom_vat_validation"):
 		return None
 	log = frappe.get_doc("VAT Validation Log", doc.custom_vat_validation)
@@ -280,7 +255,9 @@ def _reusable_valid_log(doc, address_name):
 def _store_vat_status(doc, status, log_name=None):
 	"""Write the status straight to the DB, without touching `modified`, so
 	it doesn't cause a 'document has been modified' conflict in a form the
-	user still has open (keep_vat_status covers that form's next save)."""
+	user still has open (keep_vat_status covers that form's next save).
+	An open Sales Order form updates its header indicator from the
+	realtime event."""
 	doc.custom_vat_status = status
 	doc.custom_vat_validation = log_name
 	frappe.db.set_value(
@@ -289,23 +266,30 @@ def _store_vat_status(doc, status, log_name=None):
 		{"custom_vat_status": status, "custom_vat_validation": log_name},
 		update_modified=False,
 	)
+	frappe.publish_realtime(
+		"vat_status_changed",
+		{"doctype": doc.doctype, "name": doc.name, "status": status, "log": log_name},
+		doctype=doc.doctype,
+		docname=doc.name,
+		after_commit=True,
+	)
 
 
 def keep_vat_status(doc, method=None):
-	"""doc_events validate hook for Sales Order / Sales Invoice.
+	"""doc_events validate / before_update_after_submit hook for Sales
+	Order / Sales Invoice.
 
 	custom_vat_status/custom_vat_validation are written behind the form's
 	back (_store_vat_status), so a form opened earlier still carries the
-	old values - take them from the DB instead. A changed address
-	invalidates the earlier result."""
+	old values - take them from the DB instead. A changed address on a
+	draft invalidates the earlier result."""
 	if doc.is_new():
 		return
 	before = doc.get_doc_before_save()
-	# also covers the submit itself (doc.docstatus already 1 in memory)
-	if not before or before.docstatus != 0:
+	if not before:
 		return
 	address_field = ADDRESS_FIELD_BY_DOCTYPE.get(doc.doctype)
-	if address_field and doc.get(address_field) != before.get(address_field):
+	if before.docstatus == 0 and address_field and doc.get(address_field) != before.get(address_field):
 		doc.custom_vat_status = None
 		doc.custom_vat_validation = None
 	else:
@@ -324,49 +308,85 @@ def _check_document(doc):
 
 
 def retry_pending_checks():
-	"""Scheduler job (hooks.py, every 2 minutes): re-check every draft that
-	was left at VAT_STATUS_PENDING by a busy VIES, until VIES answers."""
+	"""Scheduler job (hooks.py, every 2 minutes): re-check every document
+	left at VAT_STATUS_PENDING by a busy VIES, until VIES answers. Also
+	picks up VAT_STATUS_CHECKING, in case run_vat_check never ran (e.g.
+	background workers down)."""
 	for doctype in ADDRESS_FIELD_BY_DOCTYPE:
 		names = frappe.get_all(
 			doctype,
-			filters={"docstatus": 0, "custom_vat_status": VAT_STATUS_PENDING},
+			filters={"docstatus": ["<", 2], "custom_vat_status": ["in", PENDING_STATUSES]},
 			pluck="name",
 			order_by="modified asc",
 		)
 		for name in names:
-			doc = frappe.get_doc(doctype, name)
 			try:
-				log = _check_document(doc)
-			except vies.VIESUnavailable:
-				continue  # still busy, next run
+				_run_check(frappe.get_doc(doctype, name))
 			except Exception:
 				frappe.db.rollback()
 				frappe.log_error(title=f"VAT retry failed for {doctype} {name}")
 				continue
-
-			if log is None:
-				_store_vat_status(doc, None)  # address removed or no longer EU
-			else:
-				status = VAT_STATUS_VALID if log.valid else VAT_STATUS_INVALID
-				_store_vat_status(doc, status, log.name)
-				_notify_result(doc, log)
 			frappe.db.commit()  # nosemgrep - one document at a time
 
 
-def _notify_result(doc, log):
-	if log.valid:
-		subject = _("USt-IdNr. fuer {0} {1} ist gueltig - der Beleg kann jetzt gebucht werden.")
-	else:
-		subject = _("USt-IdNr. fuer {0} {1} ist laut VIES UNGUELTIG.")
+def _notify_invalid(doc, log):
 	enqueue_create_notification(
 		list({doc.owner, doc.modified_by}),
 		{
 			"type": "Alert",
 			"document_type": doc.doctype,
 			"document_name": doc.name,
-			"subject": subject.format(_(doc.doctype), doc.name),
+			"subject": _("USt-IdNr. fuer {0} {1} ist laut VIES UNGUELTIG.").format(_(doc.doctype), doc.name),
 			"from_user": "Administrator",
 		},
+	)
+
+
+def send_invalid_vat_report():
+	"""Scheduler job (hooks.py, daily 07:00): mail all open documents with
+	an invalid VAT ID to the recipients in VAT Check Settings. Nothing is
+	sent if there are none. Closed/completed Sales Orders are left out, a
+	Sales Invoice stays in until it's cancelled or re-checked as valid."""
+	recipients = [
+		e.strip()
+		for e in (frappe.get_cached_doc("VAT Check Settings").report_recipients or "").replace(",", "\n").splitlines()
+		if e.strip()
+	]
+	if not recipients:
+		return
+
+	rows = []
+	for doctype, date_field in (("Sales Order", "transaction_date"), ("Sales Invoice", "posting_date")):
+		filters = {"docstatus": ["<", 2], "custom_vat_status": VAT_STATUS_INVALID}
+		if doctype == "Sales Order":
+			filters["status"] = ["not in", ["Completed", "Closed"]]
+		for d in frappe.get_all(
+			doctype,
+			filters=filters,
+			fields=["name", "customer_name", f"{date_field} as date", "status", "custom_vat_validation"],
+			order_by=f"{date_field} asc",
+		):
+			log_link = get_link_to_form("VAT Validation Log", d.custom_vat_validation) if d.custom_vat_validation else ""
+			rows.append(
+				f"<tr><td>{_(doctype)}</td><td>{get_link_to_form(doctype, d.name)}</td>"
+				f"<td>{escape_html(d.customer_name or '')}</td><td>{formatdate(d.date)}</td>"
+				f"<td>{_(d.status)}</td><td>{_('Ungueltig')}</td><td>{log_link}</td></tr>"
+			)
+	if not rows:
+		return
+
+	header = "".join(
+		f"<th style='text-align:left'>{h}</th>"
+		for h in (_("Belegart"), _("Beleg"), _("Kunde"), _("Datum"), _("Beleg-Status"), _("VAT-Status"), _("Pruefprotokoll"))
+	)
+	frappe.sendmail(
+		recipients=recipients,
+		subject=_("VAT-Report: {0} Beleg(e) mit ungueltiger USt-IdNr.").format(len(rows)),
+		message=(
+			f"<p>{_('Folgende Belege haben laut VIES eine ungueltige USt-IdNr.:')}</p>"
+			"<table border='1' cellpadding='4' style='border-collapse:collapse'>"
+			f"<tr>{header}</tr>{''.join(rows)}</table>"
+		),
 	)
 
 
@@ -384,12 +404,15 @@ def _manual_check(*args):
 
 @frappe.whitelist()
 def check_now(reference_doctype, reference_name):
-	"""Manual 'jetzt pruefen' button target, callable before submit so the
-	user isn't surprised by a hard block at submit time. If VIES is busy,
-	the draft is handed to retry_pending_checks."""
+	"""Manual 'jetzt pruefen' button target: on a draft before the submit,
+	or on a submitted document to re-check after the customer's VAT ID was
+	corrected on the address. If VIES is busy, the document is handed to
+	retry_pending_checks."""
 	if reference_doctype not in ADDRESS_FIELD_BY_DOCTYPE:
 		frappe.throw(_("VAT-Pruefung ist fuer {0} nicht konfiguriert.").format(reference_doctype))
 	doc = frappe.get_doc(reference_doctype, reference_name)
+	if doc.docstatus == 2:
+		frappe.throw(_("Stornierte Belege werden nicht geprueft."))
 	address_field = ADDRESS_FIELD_BY_DOCTYPE[reference_doctype]
 	if not doc.get(address_field):
 		frappe.throw(_("Kein Wert in Feld '{0}' auf diesem Beleg.").format(address_field))

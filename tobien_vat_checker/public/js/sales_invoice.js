@@ -1,18 +1,12 @@
-// USt-IdNr.-Pruefung (VIES) - manueller "jetzt pruefen" Button vor dem Buchen,
-// damit der harte Submit-Block (siehe validation.enforce_vat_check) niemanden
-// ueberrascht. Ist VIES ueberlastet, laeuft die Pruefung im Hintergrund weiter
-// (validation.retry_pending_checks), Status steht in custom_vat_status.
+// USt-IdNr.-Pruefung (VIES) - laeuft nach dem Buchen im Hintergrund
+// (validation.start_vat_check), Ergebnis steht in custom_vat_status.
+// "jetzt pruefen" geht vor dem Buchen und zum erneuten Pruefen, wenn die
+// USt-IdNr. auf der Adresse korrigiert wurde.
 frappe.ui.form.on("Sales Invoice", {
 	refresh(frm) {
-		if (frm.doc.docstatus !== 0 || frm.is_new()) return;
+		if (frm.is_new() || frm.doc.docstatus === 2) return;
 		if (!frm.doc.shipping_address_name) return;
-
-		if (frm.doc.custom_vat_status === "VIES ueberlastet - Pruefung laeuft") {
-			frm.set_intro(
-				__("VIES ist überlastet - die USt-IdNr. wird im Hintergrund automatisch weiter geprüft. Sobald das Ergebnis da ist, kommt eine Benachrichtigung."),
-				"orange"
-			);
-		}
+		if (frm.doc.docstatus === 1 && frm.doc.custom_vat_status === "Gueltig") return;
 
 		frm.add_custom_button(__("USt-IdNr. jetzt prüfen"), () => {
 			frappe.call({
