@@ -1,10 +1,18 @@
 // USt-IdNr.-Pruefung (VIES) - manueller "jetzt pruefen" Button vor dem Buchen,
 // damit der harte Submit-Block (siehe validation.enforce_vat_check) niemanden
-// ueberrascht.
+// ueberrascht. Ist VIES ueberlastet, laeuft die Pruefung im Hintergrund weiter
+// (validation.retry_pending_checks), Status steht in custom_vat_status.
 frappe.ui.form.on("Sales Order", {
 	refresh(frm) {
-		if (frm.doc.docstatus !== 0) return;
+		if (frm.doc.docstatus !== 0 || frm.is_new()) return;
 		if (!frm.doc.shipping_address_name) return;
+
+		if (frm.doc.custom_vat_status === "VIES ueberlastet - Pruefung laeuft") {
+			frm.set_intro(
+				__("VIES ist überlastet - die USt-IdNr. wird im Hintergrund automatisch weiter geprüft. Sobald das Ergebnis da ist, kommt eine Benachrichtigung."),
+				"orange"
+			);
+		}
 
 		frm.add_custom_button(__("USt-IdNr. jetzt prüfen"), () => {
 			frappe.call({
@@ -14,11 +22,14 @@ frappe.ui.form.on("Sales Order", {
 				freeze_message: __("Prüfe USt-IdNr. via VIES..."),
 				callback: (r) => {
 					if (!r.message) return;
-					if (r.message.skipped) {
-						frappe.show_alert({ message: r.message.message, indicator: "blue" });
+					frm.reload_doc();
+					if (r.message.skipped || r.message.pending) {
+						frappe.show_alert({
+							message: r.message.message,
+							indicator: r.message.pending ? "orange" : "blue",
+						});
 						return;
 					}
-					frm.reload_doc();
 					frappe.show_alert({
 						message: r.message.valid
 							? __("USt-IdNr. gültig ({0})", [r.message.log])

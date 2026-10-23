@@ -27,13 +27,25 @@ override_doctype_dashboards = {
 # ---------------
 doc_events = {
 	"Sales Order": {
-		"before_submit": "tobien_vat_checker.custom_scripts.custom_python.validation.enforce_vat_check"
+		"validate": "tobien_vat_checker.custom_scripts.custom_python.validation.keep_vat_status",
+		"before_submit": "tobien_vat_checker.custom_scripts.custom_python.validation.enforce_vat_check",
 	},
 	"Sales Invoice": {
-		"before_submit": "tobien_vat_checker.custom_scripts.custom_python.validation.enforce_vat_check"
+		"validate": "tobien_vat_checker.custom_scripts.custom_python.validation.keep_vat_status",
+		"before_submit": "tobien_vat_checker.custom_scripts.custom_python.validation.enforce_vat_check",
 	},
 	"VAT Validation Log": {
 		"on_submit": "tobien_vat_checker.custom_scripts.custom_python.validation.attach_pdf_on_submit"
+	},
+}
+
+# Scheduled Tasks
+# ---------------
+# Keeps retrying drafts whose check hit a busy VIES, see
+# validation.retry_pending_checks.
+scheduler_events = {
+	"cron": {
+		"*/2 * * * *": ["tobien_vat_checker.custom_scripts.custom_python.validation.retry_pending_checks"],
 	},
 }
 

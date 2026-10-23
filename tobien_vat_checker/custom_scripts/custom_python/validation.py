@@ -21,9 +21,13 @@ Flow:
      to the source document via a custom field.
   5. On before_submit of Sales Order / Sales Invoice, block submission if
      the relevant EU customer's VAT ID did not validate - unless a
-     permitted role has set a logged manual override (for VIES outages,
-     see vies.VIESError) or the check has been switched off via
-     "VAT Check Settings".
+     permitted role has set a logged manual override or the check has been
+     switched off via "VAT Check Settings".
+  6. If VIES is busy (vies.VIESUnavailable), nothing is logged: the draft
+     gets custom_vat_status = VAT_STATUS_PENDING and retry_pending_checks
+     (scheduler, every 2 minutes) keeps trying until VIES answers, then
+     sets the final status and notifies the user. A valid result is
+     reused at the next submit instead of asking VIES again.
 
 Note on the EU filter: Sales Order/Sales Invoice each also have their own
 `territory` field, but EU membership is determined from `Address.country`
@@ -36,6 +40,7 @@ import json
 
 import frappe
 from frappe import _
+from frappe.desk.doctype.notification_log.notification_log import enqueue_create_notification
 from frappe.utils import get_link_to_form, now_datetime
 from frappe.utils.pdf import get_pdf
 from frappe.utils.file_manager import save_file
@@ -58,6 +63,11 @@ PARTY_FIELD_BY_DOCTYPE = {
 
 # Custom field on Address holding the USt-IdNr./VAT ID.
 ADDRESS_VAT_FIELDNAME = "tax_id"
+
+# Options of the custom_vat_status Select field on Sales Order/Invoice.
+VAT_STATUS_PENDING = "VIES ueberlastet - Pruefung laeuft"
+VAT_STATUS_VALID = "Gueltig"
+VAT_STATUS_INVALID = "Ungueltig"
 
 
 def _own_company_vat(company):
@@ -86,9 +96,8 @@ def validate_address_vat(address_name, party_type, party_name, reference_doctype
 
 	Returns the inserted & submitted "VAT Validation Log" doc, or None if
 	the address is outside the EU (nothing to check, not an error).
-	Raises vies.VIESError if the EU-address VAT ID could not be validated
-	because the service call itself failed (caller decides whether that
-	blocks anything).
+	Raises vies.VIESUnavailable if VIES is busy/down - in that case nothing
+	is logged, the caller decides whether to retry later.
 	"""
 	address = frappe.get_doc("Address", address_name)
 
@@ -122,12 +131,13 @@ def validate_address_vat(address_name, party_type, party_name, reference_doctype
 	else:
 		try:
 			result = vies.check_vat_number(country_code, vat_number, requester_cc, requester_number)
+		except vies.VIESUnavailable:
+			raise
 		except vies.VIESError as e:
+			# VIES rejected the request itself (e.g. malformed number) -
+			# logged as an invalid result, retrying won't change it
 			log.valid = 0
 			log.error_message = str(e)
-			log.raw_response = None
-			_persist(log)
-			raise
 		else:
 			log.valid = 1 if result.get("valid") else 0
 			log.request_identifier = result.get("requestIdentifier") or None
@@ -218,22 +228,30 @@ def enforce_vat_check(doc, method=None):
 		)
 		return
 
-	try:
-		log = validate_address_vat(address_name, party_type, party_name, doc.doctype, doc.name)
-	except vies.VIESError as e:
-		frappe.throw(
-			_("USt-IdNr.-Pruefung (VIES) fehlgeschlagen, Beleg kann nicht gebucht werden: {0}"
-				"<br>Falls der Dienst nachweislich down ist, kann ein berechtigter Nutzer "
-				"({1}) die Pruefung im Feld 'VAT Override' mit Begruendung "
-				"manuell uebersteuern.").format(e, ", ".join(sorted(OVERRIDE_ROLES)))
-		)
+	log = _reusable_valid_log(doc, address_name)
+	if not log:
+		try:
+			log = validate_address_vat(address_name, party_type, party_name, doc.doctype, doc.name)
+		except vies.VIESUnavailable:
+			_store_vat_status(doc, VAT_STATUS_PENDING)
+			frappe.db.commit()  # nosemgrep - keep the status through the throw's rollback
+			frappe.throw(
+				_("Der VIES-Dienst ist gerade ueberlastet. Die USt-IdNr. wird im Hintergrund automatisch "
+					"weiter geprueft (Status '{0}'). Sobald ein Ergebnis da ist, kommt eine Benachrichtigung "
+					"und der Beleg kann gebucht werden.").format(VAT_STATUS_PENDING),
+				title=_("VIES ueberlastet"),
+			)
 
 	if log is None:
 		return  # not an EU address, nothing to enforce
 
-	doc.custom_vat_validation = log.name
-
-	if not log.valid:
+	if log.valid:
+		# set on the doc itself, written by the submit that follows
+		doc.custom_vat_status = VAT_STATUS_VALID
+		doc.custom_vat_validation = log.name
+	else:
+		_store_vat_status(doc, VAT_STATUS_INVALID, log.name)
+		frappe.db.commit()  # nosemgrep - keep the status through the throw's rollback
 		frappe.throw(
 			_("USt-IdNr. der Adresse {0} ist laut VIES ungueltig ({1}). Beleg kann nicht gebucht "
 				"werden. Pruefdetails: {2}").format(
@@ -245,33 +263,150 @@ def enforce_vat_check(doc, method=None):
 		)
 
 
+def _reusable_valid_log(doc, address_name):
+	"""The valid check already done for this draft (via 'jetzt pruefen' or
+	retry_pending_checks), so submit doesn't have to ask VIES again - as
+	long as it was for the same address and the same VAT ID."""
+	if doc.get("custom_vat_status") != VAT_STATUS_VALID or not doc.get("custom_vat_validation"):
+		return None
+	log = frappe.get_doc("VAT Validation Log", doc.custom_vat_validation)
+	address = frappe.get_doc("Address", address_name)
+	country_code, vat_number = _split_vat_id(address.get(ADDRESS_VAT_FIELDNAME), vies.eu_country_code(address.country))
+	if log.valid and log.address == address_name and (log.country_code, log.vat_number) == (country_code, vat_number):
+		return log
+	return None
+
+
+def _store_vat_status(doc, status, log_name=None):
+	"""Write the status straight to the DB, without touching `modified`, so
+	it doesn't cause a 'document has been modified' conflict in a form the
+	user still has open (keep_vat_status covers that form's next save)."""
+	doc.custom_vat_status = status
+	doc.custom_vat_validation = log_name
+	frappe.db.set_value(
+		doc.doctype,
+		doc.name,
+		{"custom_vat_status": status, "custom_vat_validation": log_name},
+		update_modified=False,
+	)
+
+
+def keep_vat_status(doc, method=None):
+	"""doc_events validate hook for Sales Order / Sales Invoice.
+
+	custom_vat_status/custom_vat_validation are written behind the form's
+	back (_store_vat_status), so a form opened earlier still carries the
+	old values - take them from the DB instead. A changed address
+	invalidates the earlier result."""
+	if doc.is_new():
+		return
+	before = doc.get_doc_before_save()
+	# also covers the submit itself (doc.docstatus already 1 in memory)
+	if not before or before.docstatus != 0:
+		return
+	address_field = ADDRESS_FIELD_BY_DOCTYPE.get(doc.doctype)
+	if address_field and doc.get(address_field) != before.get(address_field):
+		doc.custom_vat_status = None
+		doc.custom_vat_validation = None
+	else:
+		doc.custom_vat_status = before.get("custom_vat_status")
+		doc.custom_vat_validation = before.get("custom_vat_validation")
+
+
+def _check_document(doc):
+	"""validate_address_vat for the address/party of a Sales Order/Invoice.
+	Returns None if there is no address or it's outside the EU."""
+	address_name = doc.get(ADDRESS_FIELD_BY_DOCTYPE[doc.doctype])
+	if not address_name:
+		return None
+	party_type, party_field = PARTY_FIELD_BY_DOCTYPE[doc.doctype]
+	return validate_address_vat(address_name, party_type, doc.get(party_field), doc.doctype, doc.name)
+
+
+def retry_pending_checks():
+	"""Scheduler job (hooks.py, every 2 minutes): re-check every draft that
+	was left at VAT_STATUS_PENDING by a busy VIES, until VIES answers."""
+	for doctype in ADDRESS_FIELD_BY_DOCTYPE:
+		names = frappe.get_all(
+			doctype,
+			filters={"docstatus": 0, "custom_vat_status": VAT_STATUS_PENDING},
+			pluck="name",
+			order_by="modified asc",
+		)
+		for name in names:
+			doc = frappe.get_doc(doctype, name)
+			try:
+				log = _check_document(doc)
+			except vies.VIESUnavailable:
+				continue  # still busy, next run
+			except Exception:
+				frappe.db.rollback()
+				frappe.log_error(title=f"VAT retry failed for {doctype} {name}")
+				continue
+
+			if log is None:
+				_store_vat_status(doc, None)  # address removed or no longer EU
+			else:
+				status = VAT_STATUS_VALID if log.valid else VAT_STATUS_INVALID
+				_store_vat_status(doc, status, log.name)
+				_notify_result(doc, log)
+			frappe.db.commit()  # nosemgrep - one document at a time
+
+
+def _notify_result(doc, log):
+	if log.valid:
+		subject = _("USt-IdNr. fuer {0} {1} ist gueltig - der Beleg kann jetzt gebucht werden.")
+	else:
+		subject = _("USt-IdNr. fuer {0} {1} ist laut VIES UNGUELTIG.")
+	enqueue_create_notification(
+		list({doc.owner, doc.modified_by}),
+		{
+			"type": "Alert",
+			"document_type": doc.doctype,
+			"document_name": doc.name,
+			"subject": subject.format(_(doc.doctype), doc.name),
+			"from_user": "Administrator",
+		},
+	)
+
+
 def _manual_check(*args):
-	"""validate_address_vat for the manual buttons: a VIES service error is
-	shown as a normal message dialog instead of a raw traceback. The failed
-	check is still logged (validate_address_vat persists it before raising)."""
+	"""validate_address_vat for the Address/Customer buttons: a busy VIES is
+	shown as a normal message dialog instead of a raw traceback."""
 	try:
 		return validate_address_vat(*args)
-	except vies.VIESError as e:
-		frappe.throw(str(e), title=_("VIES nicht verfuegbar"))
+	except vies.VIESUnavailable as e:
+		frappe.throw(
+			_("{0}<br>Bitte in ein paar Minuten erneut versuchen.").format(e),
+			title=_("VIES ueberlastet"),
+		)
 
 
 @frappe.whitelist()
 def check_now(reference_doctype, reference_name):
 	"""Manual 'jetzt pruefen' button target, callable before submit so the
-	user isn't surprised by a hard block at submit time."""
-	doc = frappe.get_doc(reference_doctype, reference_name)
-	address_field = ADDRESS_FIELD_BY_DOCTYPE.get(reference_doctype)
-	party_type, party_field = PARTY_FIELD_BY_DOCTYPE.get(reference_doctype, (None, None))
-	if not address_field:
+	user isn't surprised by a hard block at submit time. If VIES is busy,
+	the draft is handed to retry_pending_checks."""
+	if reference_doctype not in ADDRESS_FIELD_BY_DOCTYPE:
 		frappe.throw(_("VAT-Pruefung ist fuer {0} nicht konfiguriert.").format(reference_doctype))
-
-	address_name = doc.get(address_field)
-	if not address_name:
+	doc = frappe.get_doc(reference_doctype, reference_name)
+	address_field = ADDRESS_FIELD_BY_DOCTYPE[reference_doctype]
+	if not doc.get(address_field):
 		frappe.throw(_("Kein Wert in Feld '{0}' auf diesem Beleg.").format(address_field))
 
-	log = _manual_check(address_name, party_type, doc.get(party_field), reference_doctype, reference_name)
+	try:
+		log = _check_document(doc)
+	except vies.VIESUnavailable:
+		_store_vat_status(doc, VAT_STATUS_PENDING)
+		return {
+			"pending": True,
+			"message": _("VIES ist ueberlastet - die Pruefung laeuft im Hintergrund weiter."),
+		}
+
 	if log is None:
+		_store_vat_status(doc, None)
 		return {"skipped": True, "message": _("Adresse liegt ausserhalb der EU - keine Pruefung noetig.")}
+	_store_vat_status(doc, VAT_STATUS_VALID if log.valid else VAT_STATUS_INVALID, log.name)
 	return {"skipped": False, "log": log.name, "valid": bool(log.valid)}
 
 
