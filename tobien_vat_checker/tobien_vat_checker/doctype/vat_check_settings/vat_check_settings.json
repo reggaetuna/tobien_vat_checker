@@ -10,7 +10,7 @@
  "fields": [
   {
    "default": "1",
-   "description": "Schaltet die automatische VIES-Prüfung nach dem Buchen von Sales Order/Sales Invoice ein oder aus. Gebucht wird immer, die Prüfung läuft danach im Hintergrund. Die manuellen \"USt-IdNr. prüfen\"-Buttons auf Address/Customer/Beleg funktionieren unabhängig davon immer.",
+   "description": "Schaltet die automatische VIES-Prüfung nach dem Buchen von Sales Orders ein oder aus. Gebucht wird immer, die Prüfung läuft danach im Hintergrund. Die manuellen \"USt-IdNr. prüfen\"-Buttons auf Address/Customer/Beleg funktionieren unabhängig davon immer.",
    "fieldname": "enabled",
    "fieldtype": "Check",
    "label": "Automatische Prüfung nach dem Buchen aktiv"
@@ -19,13 +19,13 @@
    "fieldname": "report_recipients",
    "fieldtype": "Small Text",
    "label": "Tagesreport ungültige USt-IdNr. an",
-   "description": "E-Mail-Adressen, eine pro Zeile oder mit Komma getrennt. Jeden Morgen um 7 Uhr kommt eine Liste aller offenen Sales Orders/Sales Invoices mit ungültiger USt-IdNr. - nur wenn es welche gibt. Leer = kein Report."
+   "description": "E-Mail-Adressen, eine pro Zeile oder mit Komma getrennt. Jeden Morgen um 7 Uhr kommt eine Liste aller offenen Sales Orders mit ungültiger USt-IdNr. - nur wenn es welche gibt. Leer = kein Report."
   }
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-23 12:00:00.000000",
+ "modified": "2026-10-23 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tobien VAT Checker",
  "name": "VAT Check Settings",

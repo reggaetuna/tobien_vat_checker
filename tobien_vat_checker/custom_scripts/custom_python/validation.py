@@ -2,9 +2,9 @@
 
 Checks the USt-IdNr./VAT ID stored on an Address against the EU
 Commission's VIES service, and keeps a submittable audit record of every
-check. Currently wired up for the sales side only (Sales Order, Sales
-Invoice, Customer); Purchase Order/Purchase Invoice/Supplier can be added
-by extending ADDRESS_FIELD_BY_DOCTYPE/PARTY_FIELD_BY_DOCTYPE below, the
+check. Currently wired up for Sales Order (plus the Customer/Address
+buttons) only; Sales Invoice and Purchase Order/Purchase Invoice/Supplier
+can be added by extending ADDRESS_FIELD_BY_DOCTYPE/PARTY_FIELD_BY_DOCTYPE below, the
 hooks.py doc_events/doctype_js, and the fixtures/custom_field.json Custom
 Fields - the orchestration functions here are already doctype-agnostic.
 
@@ -19,7 +19,7 @@ Flow:
   4. Persist everything (raw response included) in a submittable
      "VAT Validation Log", attach it as a PDF to itself, and link it back
      to the source document via a custom field.
-  5. On on_submit of Sales Order / Sales Invoice, the submit goes through
+  5. On on_submit of Sales Order, the submit goes through
      and the check runs in the background (start_vat_check ->
      run_vat_check); custom_vat_status shows "Pruefung laeuft" until the
      result is there. The Sales Order form shows the status as a coloured
@@ -31,7 +31,7 @@ Flow:
      VIES answers. An invalid result notifies the user, and
      send_invalid_vat_report mails all open invalid documents daily.
 
-Note on the EU filter: Sales Order/Sales Invoice each also have their own
+Note on the EU filter: Sales Order also has its own
 `territory` field, but EU membership is determined from `Address.country`
 instead - country is a required field and a direct statement of
 geographic fact, whereas Territory reflects internal sales-region
@@ -49,22 +49,20 @@ from frappe.utils.file_manager import save_file
 
 from . import vies
 
-# Purchase Order/Purchase Invoice intentionally left out - sales-only
-# scope for now, see module docstring.
+# Sales Invoice and the purchase side intentionally left out, see module
+# docstring.
 ADDRESS_FIELD_BY_DOCTYPE = {
 	"Sales Order": "shipping_address_name",
-	"Sales Invoice": "shipping_address_name",
 }
 
 PARTY_FIELD_BY_DOCTYPE = {
 	"Sales Order": ("Customer", "customer"),
-	"Sales Invoice": ("Customer", "customer"),
 }
 
 # Custom field on Address holding the USt-IdNr./VAT ID.
 ADDRESS_VAT_FIELDNAME = "tax_id"
 
-# Options of the custom_vat_status Select field on Sales Order/Invoice.
+# Options of the custom_vat_status Select field on Sales Order.
 VAT_STATUS_CHECKING = "Pruefung laeuft"
 VAT_STATUS_PENDING = "VIES ueberlastet - Pruefung laeuft"
 VAT_STATUS_VALID = "Gueltig"
@@ -188,7 +186,7 @@ def auto_check_enabled():
 
 
 def start_vat_check(doc, method=None):
-	"""doc_events on_submit hook for Sales Order / Sales Invoice.
+	"""doc_events on_submit hook for Sales Order.
 
 	Doesn't block the submit: the check runs afterwards in the background
 	(run_vat_check), so the user can keep working. The result lands in
@@ -277,7 +275,7 @@ def _store_vat_status(doc, status, log_name=None):
 
 def keep_vat_status(doc, method=None):
 	"""doc_events validate / before_update_after_submit hook for Sales
-	Order / Sales Invoice.
+	Order.
 
 	custom_vat_status/custom_vat_validation are written behind the form's
 	back (_store_vat_status), so a form opened earlier still carries the
@@ -343,10 +341,9 @@ def _notify_invalid(doc, log):
 
 
 def send_invalid_vat_report():
-	"""Scheduler job (hooks.py, daily 07:00): mail all open documents with
-	an invalid VAT ID to the recipients in VAT Check Settings. Nothing is
-	sent if there are none. Closed/completed Sales Orders are left out, a
-	Sales Invoice stays in until it's cancelled or re-checked as valid."""
+	"""Scheduler job (hooks.py, daily 07:00): mail all open Sales Orders
+	(not completed/closed/cancelled) with an invalid VAT ID to the
+	recipients in VAT Check Settings. Nothing is sent if there are none."""
 	recipients = [
 		e.strip()
 		for e in (frappe.get_cached_doc("VAT Check Settings").report_recipients or "").replace(",", "\n").splitlines()
@@ -355,35 +352,36 @@ def send_invalid_vat_report():
 	if not recipients:
 		return
 
-	rows = []
-	for doctype, date_field in (("Sales Order", "transaction_date"), ("Sales Invoice", "posting_date")):
-		filters = {"docstatus": ["<", 2], "custom_vat_status": VAT_STATUS_INVALID}
-		if doctype == "Sales Order":
-			filters["status"] = ["not in", ["Completed", "Closed"]]
-		for d in frappe.get_all(
-			doctype,
-			filters=filters,
-			fields=["name", "customer_name", f"{date_field} as date", "status", "custom_vat_validation"],
-			order_by=f"{date_field} asc",
-		):
-			log_link = get_link_to_form("VAT Validation Log", d.custom_vat_validation) if d.custom_vat_validation else ""
-			rows.append(
-				f"<tr><td>{_(doctype)}</td><td>{get_link_to_form(doctype, d.name)}</td>"
-				f"<td>{escape_html(d.customer_name or '')}</td><td>{formatdate(d.date)}</td>"
-				f"<td>{_(d.status)}</td><td>{_('Ungueltig')}</td><td>{log_link}</td></tr>"
-			)
-	if not rows:
+	orders = frappe.get_all(
+		"Sales Order",
+		filters={
+			"docstatus": ["<", 2],
+			"custom_vat_status": VAT_STATUS_INVALID,
+			"status": ["not in", ["Completed", "Closed"]],
+		},
+		fields=["name", "customer_name", "transaction_date", "status", "custom_vat_validation"],
+		order_by="transaction_date asc",
+	)
+	if not orders:
 		return
 
+	rows = []
+	for d in orders:
+		log_link = get_link_to_form("VAT Validation Log", d.custom_vat_validation) if d.custom_vat_validation else ""
+		rows.append(
+			f"<tr><td>{get_link_to_form('Sales Order', d.name)}</td>"
+			f"<td>{escape_html(d.customer_name or '')}</td><td>{formatdate(d.transaction_date)}</td>"
+			f"<td>{_(d.status)}</td><td>{_('Ungueltig')}</td><td>{log_link}</td></tr>"
+		)
 	header = "".join(
 		f"<th style='text-align:left'>{h}</th>"
-		for h in (_("Belegart"), _("Beleg"), _("Kunde"), _("Datum"), _("Beleg-Status"), _("VAT-Status"), _("Pruefprotokoll"))
+		for h in (_("Sales Order"), _("Kunde"), _("Datum"), _("Status"), _("VAT-Status"), _("Pruefprotokoll"))
 	)
 	frappe.sendmail(
 		recipients=recipients,
-		subject=_("VAT-Report: {0} Beleg(e) mit ungueltiger USt-IdNr.").format(len(rows)),
+		subject=_("VAT-Report: {0} Sales Order(s) mit ungueltiger USt-IdNr.").format(len(rows)),
 		message=(
-			f"<p>{_('Folgende Belege haben laut VIES eine ungueltige USt-IdNr.:')}</p>"
+			f"<p>{_('Folgende Sales Orders haben laut VIES eine ungueltige USt-IdNr.:')}</p>"
 			"<table border='1' cellpadding='4' style='border-collapse:collapse'>"
 			f"<tr>{header}</tr>{''.join(rows)}</table>"
 		),

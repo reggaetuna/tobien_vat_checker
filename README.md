@@ -6,10 +6,9 @@ PDF-backed audit record recognized as proof by tax authorities.
 
 ## What the app does
 
-- **When checks run:** automatically after `Submit` of Sales Order and
-  Sales Invoice, in the background (`on_submit` → queued job), so the user
-  can keep working — plus a manual "Check VAT ID now" button on the
-  document (before submit, or to re-check a submitted document after the
+- **When checks run:** automatically after `Submit` of a Sales Order, in
+  the background (`on_submit` → queued job), so the user can keep working
+  — plus a manual "Check VAT ID now" button on the Sales Order (before submit, or to re-check a submitted document after the
   VAT ID was corrected on the address), directly on the
   **Address** (that's where `tax_id` lives — the most direct route,
   especially when a customer has several EU addresses), and additionally
@@ -20,8 +19,9 @@ PDF-backed audit record recognized as proof by tax authorities.
   (filtered on `Address.country`, see `vies.EU_COUNTRY_CODE_BY_NAME`).
   Non-EU addresses are skipped entirely — no error, no log entry.
 - **Which address:** the **shipping address** (`shipping_address_name`) of
-  the Sales Order/Sales Invoice, since it reflects the actual flow of
-  goods.
+  the Sales Order, since it reflects the actual flow of goods.
+- **Sales Invoice is not checked.** Its VAT fields from earlier versions
+  are hidden, their values are kept.
 - **Check source:** the EU Commission's [VIES REST API](https://ec.europa.eu/taxation_customs/vies/rest-api/check-vat-number).
   The company's own VAT ID is sent as `requesterNumber` — VIES then
   returns a `requestIdentifier` (consultation number), which tax
@@ -30,7 +30,7 @@ PDF-backed audit record recognized as proof by tax authorities.
   with timestamp, consultation number, the raw VIES response (JSON), and
   a name/address match — automatically attached to itself as a PDF
   (`on_submit` → standard print format → PDF attachment).
-- **No submit block:** the document is always submitted. The result is
+- **No submit block:** the Sales Order is always submitted. The result is
   stored in `custom_vat_status` (Pruefung laeuft / VIES ueberlastet -
   Pruefung laeuft / Gueltig / Ungueltig). The Sales Order shows it as a
   coloured indicator next to the document status (e.g. "To Deliver and
@@ -40,14 +40,12 @@ PDF-backed audit record recognized as proof by tax authorities.
   and last editor. The old override fields (`custom_vat_override` +
   reason) are hidden, existing values are kept.
 - **Daily report:** every day at 07:00, all open Sales Orders (not
-  Completed/Closed) and Sales Invoices (not cancelled) with an invalid VAT
-  ID are mailed to the recipients set in "VAT Check Settings" — only if
-  there are any.
-- **Linked to the SO/SI:** a dedicated field `custom_vat_validation` (link
-  to the log) is visible directly on the document.
+  Completed/Closed/cancelled) with an invalid VAT ID are mailed to the
+  recipients set in "VAT Check Settings" — only if there are any.
+- **Linked to the Sales Order:** a dedicated field `custom_vat_validation`
+  (link to the log) is visible directly on the document.
 - **Connections:** VAT Validation Logs appear in the Connections tab of
-  Sales Order, Sales Invoice (both "Reference") and Customer ("Pre
-  Sales"). The log list and form show the result in green (valid) / red
+  Sales Order ("Reference") and Customer ("Pre Sales"). The log list and form show the result in green (valid) / red
   (invalid).
 - **On/off switch:** a dedicated settings page **"VAT Check Settings"**
   (Single doctype, reachable via the awesomebar search) with a checkbox
@@ -59,7 +57,7 @@ PDF-backed audit record recognized as proof by tax authorities.
 ## Data model notes
 
 - **VAT ID field:** `tax_id` (custom field on Address).
-- **Address field on Sales Order/Sales Invoice:** `shipping_address_name`.
+- **Address field on Sales Order:** `shipping_address_name`.
 - **EU filter:** based on `Address.country` (static country list in
   `vies.py`), not the `territory` field on Sales Order/Sales
   Invoice/Customer — Territory reflects internal sales-region
@@ -85,5 +83,5 @@ Always install with the full repo URL, never with the bare name
 the name up in the public Frappe app directory).
 
 The custom fields (`custom_vat_status`, `custom_vat_validation`,
-`custom_vat_override`, `custom_vat_override_reason` on SO/SI) ship as a fixture
+`custom_vat_override`, `custom_vat_override_reason` on Sales Order, hidden ones on Sales Invoice) ship as a fixture
 (`fixtures/custom_field.json`) and are imported during `migrate`.

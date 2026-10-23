@@ -1,5 +1,5 @@
-"""Adds "VAT Validation Log" to the Connections tab of Sales Order, Sales
-Invoice and Customer (hooks.py override_doctype_dashboards).
+"""Adds "VAT Validation Log" to the Connections tab of Sales Order and
+Customer (hooks.py override_doctype_dashboards).
 
 The log links back via Dynamic Links (reference_name / party), so the
 dashboard needs a non_standard_fieldname instead of the doctype's default
@@ -29,11 +29,6 @@ def _add_log(data, fieldname, anchor_item):
 def sales_order(data):
 	# "Reference" group (Quotation, Auto Repeat, ...)
 	return _add_log(data, "reference_name", "Auto Repeat")
-
-
-def sales_invoice(data):
-	# "Reference" group (Timesheet, Delivery Note, Sales Order)
-	return _add_log(data, "reference_name", "Sales Order")
 
 
 def customer(data):

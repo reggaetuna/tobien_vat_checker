@@ -6,12 +6,11 @@ app_email = "support@phamos.eu"
 app_license = "mit"
 
 # include js in doctype views
-# Sales-only scope for now - Purchase Order/Purchase Invoice/Supplier
-# deliberately not wired up yet, see
+# Sales Order only - Sales Invoice and the purchase side deliberately
+# not wired up, see
 # custom_scripts/custom_python/validation.py module docstring.
 doctype_js = {
 	"Sales Order": "public/js/sales_order.js",
-	"Sales Invoice": "public/js/sales_invoice.js",
 	"Customer": "public/js/customer.js",
 	"Address": "public/js/address.js",
 }
@@ -19,7 +18,6 @@ doctype_js = {
 # Connections tab: link VAT Validation Logs on the documents/customer
 override_doctype_dashboards = {
 	"Sales Order": "tobien_vat_checker.custom_scripts.custom_python.dashboards.sales_order",
-	"Sales Invoice": "tobien_vat_checker.custom_scripts.custom_python.dashboards.sales_invoice",
 	"Customer": "tobien_vat_checker.custom_scripts.custom_python.dashboards.customer",
 }
 
@@ -27,11 +25,6 @@ override_doctype_dashboards = {
 # ---------------
 doc_events = {
 	"Sales Order": {
-		"validate": "tobien_vat_checker.custom_scripts.custom_python.validation.keep_vat_status",
-		"before_update_after_submit": "tobien_vat_checker.custom_scripts.custom_python.validation.keep_vat_status",
-		"on_submit": "tobien_vat_checker.custom_scripts.custom_python.validation.start_vat_check",
-	},
-	"Sales Invoice": {
 		"validate": "tobien_vat_checker.custom_scripts.custom_python.validation.keep_vat_status",
 		"before_update_after_submit": "tobien_vat_checker.custom_scripts.custom_python.validation.keep_vat_status",
 		"on_submit": "tobien_vat_checker.custom_scripts.custom_python.validation.start_vat_check",
@@ -57,7 +50,8 @@ scheduler_events = {
 # --------
 # Only export the Custom Fields this app owns (prefix custom_vat*), so
 # `bench --site x export-fixtures` doesn't sweep up unrelated Custom Fields
-# already present on the same doctypes.
+# already present on the same doctypes. The Sales Invoice fields stay in
+# hidden, so their values from before Sales Invoice was dropped are kept.
 fixtures = [
 	{
 		"dt": "Custom Field",
