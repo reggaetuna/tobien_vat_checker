@@ -295,6 +295,17 @@ def keep_vat_status(doc, method=None):
 		doc.custom_vat_validation = before.get("custom_vat_validation")
 
 
+def allow_cancel_with_vat_log(doc, method=None):
+	"""doc_events on_cancel hook for Sales Order.
+
+	The Sales Order and its submitted VAT Validation Log link to each
+	other, so Frappe's back-link check would block cancelling either one.
+	The log stays submitted as proof of the check at that time. Runs as
+	on_cancel (after the controller's own on_cancel, before the back-link
+	check) and extends the list so ERPNext's own entries are kept."""
+	doc.ignore_linked_doctypes = (*(doc.get("ignore_linked_doctypes") or ()), "VAT Validation Log")
+
+
 def _check_document(doc):
 	"""validate_address_vat for the address/party of a Sales Order/Invoice.
 	Returns None if there is no address or it's outside the EU."""

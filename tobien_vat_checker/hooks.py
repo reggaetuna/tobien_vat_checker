@@ -28,6 +28,7 @@ doc_events = {
 		"validate": "tobien_vat_checker.custom_scripts.custom_python.validation.keep_vat_status",
 		"before_update_after_submit": "tobien_vat_checker.custom_scripts.custom_python.validation.keep_vat_status",
 		"on_submit": "tobien_vat_checker.custom_scripts.custom_python.validation.start_vat_check",
+		"on_cancel": "tobien_vat_checker.custom_scripts.custom_python.validation.allow_cancel_with_vat_log",
 	},
 	"VAT Validation Log": {
 		"on_submit": "tobien_vat_checker.custom_scripts.custom_python.validation.attach_pdf_on_submit"

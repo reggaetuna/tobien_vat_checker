@@ -18,6 +18,14 @@ frappe.ui.form.on("Sales Order", {
 	refresh(frm) {
 		show_vat_indicator(frm);
 
+		// das gebuchte Log bleibt beim Stornieren als Nachweis bestehen,
+		// siehe validation.allow_cancel_with_vat_log. In refresh statt setup,
+		// damit ein ERPNext-onload die Liste nicht wieder ueberschreibt.
+		const ignored = frm.ignore_doctypes_on_cancel_all || [];
+		if (!ignored.includes("VAT Validation Log")) {
+			frm.ignore_doctypes_on_cancel_all = [...ignored, "VAT Validation Log"];
+		}
+
 		if (frm.is_new() || frm.doc.docstatus === 2) return;
 		if (!frm.doc.shipping_address_name) return;
 		if (frm.doc.docstatus === 1 && frm.doc.custom_vat_status === "Gueltig") return;
